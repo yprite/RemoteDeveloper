@@ -2,10 +2,10 @@ from typing import Dict, Any, Optional
 import os
 import json
 import logging
-from ..base import AgentStrategy
-from ...core.llm import LLMService
-from ...core.prompt_manager import PromptManager
-from ...core.git_service import GitService
+from agents.base import AgentStrategy
+from core.llm import LLMService
+from core.prompt_manager import PromptManager
+from core.git_service import GitService
 
 logger = logging.getLogger("agents")
 llm_service = LLMService()
@@ -64,7 +64,7 @@ class DocAgent(AgentStrategy):
             try:
                 git.checkout(branch_name)
             except:
-                pass # Already on branch hopefully
+                logger.warning(f"Could not check out {branch_name}, staying on current branch")
 
             # Write doc files
             for file in files:
@@ -74,8 +74,25 @@ class DocAgent(AgentStrategy):
             if len(files) > 0:
                 git.commit(f"docs: Add {len(files)} documentation files")
             
-            output = f"[문서화 완료]\n- Files: {len(files)} (README etc.)\n- Branch: {branch_name}"
-            
+            # --- NEW: Push & PR ---
+            try:
+                # 1. Push Feature Branch
+                git.push(branch_name)
+                
+                # 2. Create PR
+                pr_title = f"Feat: {event.get('task', {}).get('title', 'Autonomous Update')}"
+                pr_body = (
+                    f"## Description\nAutonomous update by AI Agent.\n\n"
+                    f"### Task\n{event.get('task', {}).get('original_prompt')}\n\n"
+                    f"### Agents Involved\n- Code\n- TestQA\n- Doc"
+                )
+                pr_url = git.create_pr(title=pr_title, body=pr_body, base_branch="main")
+                
+                output = f"[문서화 및 PR 완료]\n- Files: {len(files)}\n- Branch: {branch_name}\n- Pushed: Yes\n- PR: {pr_url}"
+            except Exception as e:
+                output = f"[문서화 완료 (PR 실패)]\n- Files: {len(files)}\n- Error: {str(e)}"
+                logger.error(f"Push/PR failed: {e}")
+
         except json.JSONDecodeError:
              output = f"[문서 초안]\n{response[:500]}..."
         except Exception as e:

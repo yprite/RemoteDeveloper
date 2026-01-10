@@ -2,10 +2,10 @@ from typing import Dict, Any, Optional
 import os
 import json
 import logging
-from ..base import AgentStrategy
-from ...core.llm import LLMService
-from ...core.prompt_manager import PromptManager
-from ...core.git_service import GitService
+from agents.base import AgentStrategy
+from core.llm import LLMService
+from core.prompt_manager import PromptManager
+from core.git_service import GitService
 
 logger = logging.getLogger("agents")
 llm_service = LLMService()

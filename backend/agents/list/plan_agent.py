@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 import logging
-from ..base import AgentStrategy
-from ...core.llm import LLMService
-from ...core.prompt_manager import PromptManager
+from agents.base import AgentStrategy
+from core.llm import LLMService
+from core.prompt_manager import PromptManager
 
 logger = logging.getLogger("agents")
 llm_service = LLMService()

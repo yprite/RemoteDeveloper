@@ -110,3 +110,39 @@ class GitService:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(content)
+
+    def create_pr(self, title: str, body: str, base_branch: str = "main") -> str:
+        """Create a Pull Request using GitHub CLI (gh)."""
+        import subprocess
+        
+        try:
+            # gh pr create --title "..." --body "..." --base main
+            cmd = [
+                "gh", "pr", "create",
+                "--title", title,
+                "--body", body,
+                "--base", base_branch,
+                "--repo", self.repo_path  # Run in the repo context
+            ]
+            
+            # Since gitpython doesn't wrap gh, we use subprocess
+            # We need to run inside the repo directory
+            result = subprocess.run(
+                ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                pr_url = result.stdout.strip()
+                logger.info(f"PR Created: {pr_url}")
+                return pr_url
+            else:
+                error_msg = result.stderr.strip()
+                logger.error(f"Failed to create PR: {error_msg}")
+                return f"Error: {error_msg}"
+                
+        except Exception as e:
+            logger.error(f"PR Creation failed: {e}")
+            return f"Error: {str(e)}"
