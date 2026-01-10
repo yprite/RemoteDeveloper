@@ -6,6 +6,9 @@ This is the central FastAPI application that orchestrates:
 - Event-driven queue processing via Redis
 - Workflow/state machine engine
 """
+from dotenv import load_dotenv
+load_dotenv() # Load environment variables from .env
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

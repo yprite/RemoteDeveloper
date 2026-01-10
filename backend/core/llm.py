@@ -8,8 +8,13 @@ class LLMService:
     def __init__(self):
         self.api_key = os.getenv("OPENAI_API_KEY")
         if not self.api_key:
-            logger.warning("OPENAI_API_KEY not found in environment variables.")
-        self.client = OpenAI(api_key=self.api_key)
+            logger.warning("OPENAI_API_KEY not found in environment variables. LLM calls will fail.")
+            # Prevent OpenAI client crash on missing key by using a dummy if needed, 
+            # or just don't init client yet if the library supports it. 
+            # OpenAI python client requires api_key. We'll pass a dummy to allow startup.
+            self.client = OpenAI(api_key="missing_key")
+        else:
+            self.client = OpenAI(api_key=self.api_key)
         self.default_model = "gpt-4o" # or gpt-4-turbo
 
     def chat_completion(self, 

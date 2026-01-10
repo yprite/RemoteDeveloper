@@ -7,7 +7,12 @@ from typing import List, Dict, Any
 
 # In-memory log storage
 logs: List[Dict[str, Any]] = []
+logs: List[Dict[str, Any]] = []
 MAX_LOGS = 200
+
+# Global logger instance
+logger = logging.getLogger("ai_dev_team")
+
 
 # 로그에서 제외할 경로들 (프론트엔드 폴링 API)
 EXCLUDED_PATHS = [
