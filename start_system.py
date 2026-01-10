@@ -41,6 +41,8 @@ def kill_process_on_port(port):
 def cleanup():
     """Terminates all started processes."""
     log("Shutting down services...")
+    # Kill any lingering cloudflared
+    subprocess.run("pkill -f cloudflared", shell=True)
     for p in processes:
         if p.poll() is None: # If process is still running
             p.terminate()
@@ -185,7 +187,7 @@ def main():
     # 4. Start Frontend Dashboard & Tunnel
     if run_dashboard:
         log("Starting Frontend Dashboard (Vite)...")
-        dashboard_proc = subprocess.Popen(["npm", "run", "dev", "--", "--port", str(DASHBOARD_PORT)], 
+        dashboard_proc = subprocess.Popen(["npm", "run", "dev", "--", "--port", str(DASHBOARD_PORT), "--host", "0.0.0.0"], 
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, 
                                         cwd="./dashboard")
         processes.append(dashboard_proc)
