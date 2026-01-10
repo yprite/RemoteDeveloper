@@ -5,3 +5,5 @@ pydantic
 redis
 requests
 python-dotenv
+GitPython
+openai

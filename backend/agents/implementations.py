@@ -1,10 +1,44 @@
 """
 Agent Implementations Module - All 10 agent implementations.
+Now integrated with Real LLM and Git capabilities.
 """
+import os
+import json
+import logging
 from typing import Optional, Dict, Any
 
 from .base import AgentStrategy
+from core.llm import LLMService
+from core.git_service import GitService
 
+logger = logging.getLogger("agents")
+llm_service = LLMService()
+
+# Helper to format prompts safely
+def format_prompt(template: str, data: Dict[str, Any]) -> str:
+    # Get all keys from the data dict to safely format (ignoring missing ones with empty string or similar if needed)
+    # For now, we assume the specific keys needed by the prompt are present in 'data' dictionary.
+    # We might need to map event['data'] keys to prompt keys.
+    try:
+        return template.format(**data)
+    except KeyError as e:
+        logger.warning(f"Key missing in prompt formatting: {e}")
+        return template # Fallback, might contain {key} literal
+
+def get_repo_path(event: Dict[str, Any]) -> str:
+    """Determine where to perform file operations."""
+    task_git_context = event.get("task", {}).get("git_context")
+    if task_git_context and task_git_context.get("custom_path"):
+        return task_git_context["custom_path"]
+    
+    # Default to a workspace directory
+    # For self-improvement, it might default to os.getcwd() but that's risky.
+    # We'll use a specific 'workspace' dir relative to backend.
+    
+    workspace_dir = os.path.abspath(os.path.join(os.getcwd(), "..", "workspace_tasks"))
+    task_id = event.get("meta", {}).get("event_id", "default_task")
+    repo_path = os.path.join(workspace_dir, task_id)
+    return repo_path
 
 # --- 1. Requirement Refinement Agent ---
 class RequirementAgent(AgentStrategy):
@@ -22,14 +56,24 @@ class RequirementAgent(AgentStrategy):
 사용자의 아이디어를 구체화하고 명확한 요구사항으로 정제합니다.
 부족한 정보가 있다면 질문을 통해 보완합니다.
 
-다음 정보가 필요합니다:
-- 프로젝트의 목적
-- 주요 기능 목록
-- 타겟 사용자
-- 기술적 제약사항
-- 우선순위
-
 입력: {original_prompt}
+
+판단 기준:
+1. 요구사항이 명확하고 상세한가?
+2. 기술적 제약사항이나 목표가 포함되어 있는가?
+
+출력 형식:
+만약 불명확하다면 JSON으로 출력:
+{{
+    "needs_clarification": true,
+    "clarification_question": "사용자에게 물어볼 질문"
+}}
+
+명확하다면 JSON으로 출력:
+{{
+    "needs_clarification": false,
+    "requirement_summary": "정제된 요구사항 텍스트"
+}}
 """
     
     @property
@@ -37,24 +81,26 @@ class RequirementAgent(AgentStrategy):
         return "PLAN"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        """Special handling: can request clarification from user."""
         prompt = event.get("task", {}).get("original_prompt", "")
         
-        if len(prompt) < 20:
+        # 1. LLM Call
+        system_prompt = self.prompt_template.format(original_prompt=prompt)
+        response_text = llm_service.chat_completion(system_prompt, "요구사항을 분석해주세요.", json_mode=True)
+        
+        try:
+            result = json.loads(response_text)
+        except:
+            # Fallback if json parsing fails
+            result = {"needs_clarification": False, "requirement_summary": response_text}
+
+        if result.get("needs_clarification"):
             event["task"]["needs_clarification"] = True
-            event["task"]["clarification_question"] = "프로젝트의 구체적인 목표와 주요 기능을 알려주세요."
-            output = f"[요구사항 분석 중] 추가 정보 필요: '{prompt}'"
+            event["task"]["clarification_question"] = result.get("clarification_question")
+            output = f"[요구사항 분석 중] 추가 정보 필요: {result.get('clarification_question')}"
         else:
             event["task"]["needs_clarification"] = False
             event["task"]["clarification_question"] = None
-            output = f"""[요구사항 정제 완료]
-원본: {prompt}
-정제된 요구사항:
-- 목적: {prompt}에 대한 구현
-- 기능: 핵심 기능 구현 예정
-- 사용자: 일반 사용자
-- 제약사항: 없음
-"""
+            output = f"[요구사항 정제 완료]\n{result.get('requirement_summary')}"
         
         event["data"]["requirement"] = output
         return event
@@ -75,13 +121,14 @@ class PlanAgent(AgentStrategy):
         return """당신은 프로젝트 기획 전문가입니다.
 요구사항을 바탕으로 로드맵을 작성하고 태스크를 분해합니다.
 
-출력 형식:
-- 마일스톤 정의
-- 태스크 분해
-- 의존성 파악
-- 일정 추정
-
 요구사항: {requirement}
+
+출력 형식 (Markdown):
+# 프로젝트 계획
+## 마일스톤
+...
+## 태스크 상세
+...
 """
     
     @property
@@ -89,17 +136,10 @@ class PlanAgent(AgentStrategy):
         return "UXUI"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[프로젝트 계획]
-마일스톤 1: 설계 단계 (1주)
-  - Task 1.1: 요구사항 분석
-  - Task 1.2: 기술 스택 결정
-마일스톤 2: 구현 단계 (2주)
-  - Task 2.1: 핵심 기능 개발
-  - Task 2.2: UI 개발
-마일스톤 3: 테스트 단계 (1주)
-  - Task 3.1: 단위 테스트
-  - Task 3.2: 통합 테스트
-"""
+        req = event["data"].get("requirement", "")
+        formatted_prompt = self.prompt_template.format(requirement=req)
+        
+        output = llm_service.chat_completion(formatted_prompt, "계획을 수립해주세요.")
         event["data"]["plan"] = output
         return event
 
@@ -119,13 +159,14 @@ class UxUiAgent(AgentStrategy):
         return """당신은 UX/UI 디자인 전문가입니다.
 사용자 경험과 인터페이스를 설계합니다.
 
-고려사항:
-- 사용자 플로우
-- 와이어프레임
-- 디자인 시스템
-- 접근성
-
 계획: {plan}
+
+출력 형식 (Markdown):
+# UX/UI 디자인
+## 사용자 플로우
+...
+## 디자인 시스템 제안
+...
 """
     
     @property
@@ -133,18 +174,10 @@ class UxUiAgent(AgentStrategy):
         return "ARCHITECT"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[UX/UI 설계]
-사용자 플로우:
-  1. 메인 화면 진입
-  2. 기능 선택
-  3. 작업 수행
-  4. 결과 확인
-
-디자인 시스템:
-  - 색상: Primary #3B82F6, Secondary #10B981
-  - 폰트: Inter, 시스템 폰트
-  - 컴포넌트: 버튼, 카드, 모달
-"""
+        plan = event["data"].get("plan", "")
+        formatted_prompt = self.prompt_template.format(plan=plan)
+        
+        output = llm_service.chat_completion(formatted_prompt, "UX/UI를 설계해주세요.")
         event["data"]["ux_ui"] = output
         return event
 
@@ -164,14 +197,13 @@ class ArchitectAgent(AgentStrategy):
         return """당신은 소프트웨어 아키텍트입니다.
 시스템 구조와 기술적 설계를 결정합니다.
 
-결정사항:
-- 아키텍처 패턴
-- 기술 스택
-- 데이터 모델
-- API 설계
-- 보안 고려사항
-
 UX/UI 설계: {ux_ui}
+
+출력 형식 (Markdown):
+# 아키텍처 설계
+## 기술 스택
+## 디렉토리 구조
+## 데이터 모델
 """
     
     @property
@@ -179,18 +211,10 @@ UX/UI 설계: {ux_ui}
         return "CODE"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[아키텍처 설계]
-패턴: Clean Architecture
-구조:
-  - Presentation Layer (React/Vue)
-  - Application Layer (FastAPI)
-  - Domain Layer (Business Logic)
-  - Infrastructure Layer (PostgreSQL, Redis)
-
-API 설계:
-  - REST API with OpenAPI 3.0
-  - JWT Authentication
-"""
+        ux_ui = event["data"].get("ux_ui", "")
+        formatted_prompt = self.prompt_template.format(ux_ui=ux_ui)
+        
+        output = llm_service.chat_completion(formatted_prompt, "아키텍처를 설계해주세요.")
         event["data"]["architecture"] = output
         return event
 
@@ -203,20 +227,30 @@ class CodeAgent(AgentStrategy):
     
     @property
     def display_name(self) -> str:
-        return "CODE 에이전트 (구현)"
+        return "CODE 에이전트 (구현 및 Git 작업)"
     
     @property
     def prompt_template(self) -> str:
         return """당신은 시니어 개발자입니다.
-설계에 따라 코드를 구현합니다.
-
-원칙:
-- Clean Code
-- SOLID 원칙
-- 테스트 가능한 코드
-- 적절한 주석
+설계에 따라 전제 코드를 작성합니다.
 
 아키텍처: {architecture}
+계획: {plan}
+
+**중요**: 반드시 아래 JSON 포맷으로 코드를 출력해야 합니다. 실제 파일 시스템에 작성될 것입니다.
+{{
+    "files": [
+        {{
+            "path": "backend/main.py",
+            "content": "..."
+        }},
+        {{
+            "path": "frontend/src/App.js",
+            "content": "..."
+        }}
+    ],
+    "commit_message": "feat: 구현 내용 요약"
+}}
 """
     
     @property
@@ -224,20 +258,52 @@ class CodeAgent(AgentStrategy):
         return "REFACTORING"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[코드 구현]
-# main.py
-def main():
-    app = Application()
-    app.initialize()
-    app.run()
+        arch = event["data"].get("architecture", "")
+        plan = event["data"].get("plan", "")
+        
+        formatted_prompt = self.prompt_template.format(architecture=arch, plan=plan)
+        response = llm_service.chat_completion(formatted_prompt, "코드를 구현해주세요.", json_mode=True)
+        
+        try:
+            data = json.loads(response)
+            files = data.get("files", [])
+            commit_msg = data.get("commit_message", "Implemented features")
+            
+            # Git Operations
+            repo_path = get_repo_path(event)
+            # If repo_path doesn't exist, we might need to clone.
+            # For now, let's assume we are working in the specified path or create it.
+            
+            git = GitService(repo_path)
+            # Check if we should clone from a URL provided in task
+            repo_url = event.get("task", {}).get("git_context", {}).get("repo_url")
+            
+            if repo_url:
+                 git.clone(repo_url)
+            
+            # Create a branch for this task
+            task_id = event.get("meta", {}).get("event_id", "task")
+            branch_name = f"feature/{task_id}"
+            try:
+                git.checkout(branch_name, create_if_missing=True)
+            except:
+                logger.warning(f"Could not checkout branch {branch_name}, continuing in current branch.")
+            
+            # Write files
+            for file in files:
+                git.write_file_content(file["path"], file["content"])
+            
+            # Commit
+            git.commit(commit_msg)
+            
+            output = f"[코드 구현 완료]\n- Files: {len(files)}\n- Branch: {branch_name}\n- Commit: {commit_msg}"
+            
+        except json.JSONDecodeError:
+            output = f"[Error] Code Agent failed to produce JSON:\n{response[:200]}..."
+        except Exception as e:
+             output = f"[Error] Git/File Operation failed: {str(e)}"
+             logger.error(f"Code Agent failed: {e}")
 
-# models.py
-class Entity:
-    def __init__(self, id: str):
-        self.id = id
-
-# 구현 완료: 3개 파일, 150 LOC
-"""
         event["data"]["code"] = output
         return event
 
@@ -255,15 +321,12 @@ class RefactoringAgent(AgentStrategy):
     @property
     def prompt_template(self) -> str:
         return """당신은 리팩토링 전문가입니다.
-코드 품질을 개선하고 기술 부채를 줄입니다.
+코드 품질을 개선합니다.
 
-점검 항목:
-- 코드 중복 제거
-- 명명 규칙 개선
-- 복잡도 감소
-- 성능 최적화
+현재는 자동화된 리팩토링보다, 코드 리뷰 코멘트를 남기는 것에 집중해주세요.
+코드 구현 내역: {code}
 
-코드: {code}
+출력: 리팩토링 제안 사항
 """
     
     @property
@@ -271,15 +334,10 @@ class RefactoringAgent(AgentStrategy):
         return "TESTQA"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[리팩토링 결과]
-개선 사항:
-  - 중복 코드 3개 제거
-  - 함수 분리: 2개 함수 → 5개 함수
-  - 변수명 개선: 10개
-  - Cyclomatic Complexity: 15 → 8
-
-코드 품질 점수: B+ → A-
-"""
+        code_summary = event["data"].get("code", "")
+        formatted_prompt = self.prompt_template.format(code=code_summary)
+        
+        output = llm_service.chat_completion(formatted_prompt, "리팩토링 제안을 해주세요.")
         event["data"]["refactoring"] = output
         return event
 
@@ -292,20 +350,15 @@ class TestQaAgent(AgentStrategy):
     
     @property
     def display_name(self) -> str:
-        return "TEST/QA 에이전트 (테스트/검증)"
+        return "TEST/QA 에이전트"
     
     @property
     def prompt_template(self) -> str:
         return """당신은 QA 엔지니어입니다.
-코드의 품질과 기능을 검증합니다.
+현재 구현된 코드에 대한 테스트 전략을 수립해주세요.
 
-테스트 종류:
-- 단위 테스트
-- 통합 테스트
-- E2E 테스트
-- 성능 테스트
-
-리팩토링된 코드: {refactoring}
+구현 내역: {code}
+출력: 테스트 시나리오 및 케이스
 """
     
     @property
@@ -313,16 +366,11 @@ class TestQaAgent(AgentStrategy):
         return "DOC"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[테스트 결과]
-단위 테스트: 45/45 통과 (100%)
-통합 테스트: 12/12 통과 (100%)
-E2E 테스트: 5/5 통과 (100%)
-코드 커버리지: 87%
-
-성능 테스트:
-  - 응답 시간: 평균 45ms
-  - 처리량: 1000 req/s
-"""
+        # In a real scenario, this would run 'pytest' using GitService/Subprocess
+        code_summary = event["data"].get("code", "")
+        formatted_prompt = self.prompt_template.format(code=code_summary)
+        
+        output = llm_service.chat_completion(formatted_prompt, "테스트 시나리오를 작성해주세요.")
         event["data"]["test_results"] = output
         return event
 
@@ -335,20 +383,15 @@ class DocAgent(AgentStrategy):
     
     @property
     def display_name(self) -> str:
-        return "DOC 에이전트 (문서)"
+        return "DOC 에이전트"
     
     @property
     def prompt_template(self) -> str:
-        return """당신은 기술 문서 작성 전문가입니다.
-프로젝트 문서를 작성합니다.
-
-문서 유형:
-- README
-- API 문서
-- 사용자 가이드
-- 개발자 가이드
-
-테스트 결과: {test_results}
+        return """프로젝트 문서를 작성해주세요.
+        
+내용:
+{code}
+{test_results}
 """
     
     @property
@@ -356,15 +399,12 @@ class DocAgent(AgentStrategy):
         return "RELEASE"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[문서화 완료]
-생성된 문서:
-  - README.md (설치 및 실행 가이드)
-  - API.md (API 레퍼런스)
-  - CONTRIBUTING.md (기여 가이드)
-  - CHANGELOG.md (변경 이력)
-
-API 문서: OpenAPI 3.0 스펙 생성 완료
-"""
+        code = event["data"].get("code", "")
+        test = event["data"].get("test_results", "")
+        
+        formatted_prompt = self.prompt_template.format(code=code, test_results=test)
+        
+        output = llm_service.chat_completion(formatted_prompt, "문서를 작성해주세요.")
         event["data"]["documentation"] = output
         return event
 
@@ -377,19 +417,12 @@ class ReleaseAgent(AgentStrategy):
     
     @property
     def display_name(self) -> str:
-        return "Release 에이전트 (배포)"
+        return "Release 에이전트"
     
     @property
     def prompt_template(self) -> str:
-        return """당신은 DevOps 엔지니어입니다.
-애플리케이션 배포를 담당합니다.
-
-배포 단계:
-- 빌드
-- 스테이징 배포
-- 프로덕션 배포
-- 롤백 계획
-
+        return """배포 준비 상태를 점검해주세요.
+        
 문서: {documentation}
 """
     
@@ -398,16 +431,10 @@ class ReleaseAgent(AgentStrategy):
         return "MONITORING"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[배포 완료]
-빌드: v1.0.0-build.123
-스테이징: https://staging.example.com ✓
-프로덕션: https://app.example.com ✓
-
-배포 정보:
-  - Docker 이미지: app:v1.0.0
-  - 배포 시간: 2분 30초
-  - 헬스체크: 통과
-"""
+        doc = event["data"].get("documentation", "")
+        formatted_prompt = self.prompt_template.format(documentation=doc)
+        
+        output = llm_service.chat_completion(formatted_prompt, "배포 체크리스트 확인.")
         event["data"]["release"] = output
         return event
 
@@ -420,39 +447,17 @@ class MonitoringAgent(AgentStrategy):
     
     @property
     def display_name(self) -> str:
-        return "Monitoring 에이전트 (감시 및 VOC 수집)"
+        return "Monitoring 에이전트"
     
     @property
     def prompt_template(self) -> str:
-        return """당신은 운영 모니터링 전문가입니다.
-시스템 상태를 감시하고 사용자 피드백을 수집합니다.
-
-모니터링 항목:
-- 시스템 메트릭
-- 에러 로그
-- 사용자 피드백 (VOC)
-- 성능 지표
-
-배포 정보: {release}
-"""
+        return """모니터링 알림 규칙을 생성해주세요."""
     
     @property
     def next_agent(self) -> Optional[str]:
-        return None  # End of pipeline
+        return None
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        output = """[모니터링 설정 완료]
-대시보드: https://monitor.example.com
-
-알림 설정:
-  - CPU > 80%: Slack 알림
-  - 에러율 > 1%: PagerDuty 알림
-  - 응답시간 > 500ms: 경고
-
-VOC 수집 채널:
-  - 인앱 피드백
-  - 이메일
-  - 고객센터 연동
-"""
+        output = llm_service.chat_completion(self.prompt_template, "모니터링 설정을 제안해주세요.")
         event["data"]["monitoring"] = output
         return event
