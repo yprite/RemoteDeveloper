@@ -17,7 +17,7 @@ from core.logging_config import setup_logging
 from core.redis_client import init_redis
 
 # Import routers
-from routers import agent_router, workflow_router, file_router
+from routers import agent_router, workflow_router, file_router, system_router
 from agents import AGENT_REGISTRY
 
 # =============================================================================
@@ -52,6 +52,7 @@ init_redis()
 app.include_router(agent_router)
 app.include_router(workflow_router)
 app.include_router(file_router)
+app.include_router(system_router)
 
 # =============================================================================
 # ROOT ENDPOINT
