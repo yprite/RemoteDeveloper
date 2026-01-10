@@ -122,6 +122,9 @@ def main():
     run_agent = args.all or args.agent
     run_n8n = args.all or args.n8n
     run_dashboard = args.all or args.dashboard
+    
+    # Initialize URL variables
+    be_url = n8n_url = fe_url = "Not Started"
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -201,9 +204,28 @@ def main():
         fe_url, pipe = find_tunnel_url(fe_tunnel_proc.stderr, "FE-Tunnel")
         if fe_url:
             log(f"✅ Frontend Tunnel established at: {fe_url}")
+            
+            # Save Frontend URL to Redis so backend can use it for notifications
+            try:
+                subprocess.run([VENV_PYTHON, "-c", f"import redis; r = redis.Redis(port={REDIS_PORT}); r.set('config:frontend_url', '{fe_url}')"], check=False)
+                log(f"Saved Frontend URL to Redis config:config:frontend_url")
+            except Exception as e:
+                log(f"Failed to save URL to Redis: {e}")
+
             threading.Thread(target=stream_reader, args=(pipe, "FE-Tunnel"), daemon=True).start()
         else:
             log("Failed to start Frontend Tunnel.")
+
+    # Send URLs to Telegram
+    try:
+        log("🚀 Sending system URLs to Telegram...")
+        msg = f"🚀 <b>System Started</b>\\n\\nFrontend: {fe_url}\\nBackend: {be_url}\\nn8n: {n8n_url}"
+        
+        # Use VENV_PYTHON to reuse the telegram_bot module
+        script = f"import sys; sys.path.append('{os.getcwd()}/backend'); from core.telegram_bot import send_telegram_notification; send_telegram_notification('7508230549', '{msg}', dashboard_link=False)"
+        subprocess.run([VENV_PYTHON, "-c", script], check=False)
+    except Exception as e:
+        log(f"Failed to send Telegram notification: {e}")
 
     log("🎉 All selected services are running! Press Ctrl+C to stop.")
     
