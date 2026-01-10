@@ -2,6 +2,10 @@ import os
 import requests
 from core.logging_config import add_log
 from core.redis_client import get_redis
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def get_frontend_url():
     """Retrieve frontend URL from Redis config."""

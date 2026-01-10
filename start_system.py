@@ -22,6 +22,23 @@ CONFIG_FILE_PATH = "./dashboard/src/config.js"
 
 processes = []
 
+def load_env_file():
+    """Manually load .env file to avoid dependencies in the launcher script."""
+    env_path = ".env"
+    if os.path.exists(env_path):
+        log(f"Loading environment variables from {env_path}")
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Handle quotes
+                    value = value.strip()
+                    if (value.startswith('"') and value.endswith('"')) or \
+                       (value.startswith("'") and value.endswith("'")):
+                        value = value[1:-1]
+                    os.environ[key] = value
+
 def log(msg):
     print(f"[System Launcher] {msg}")
 
@@ -114,6 +131,9 @@ def main():
     parser.add_argument("--dashboard", action="store_true", help="Start Frontend Dashboard & Tunnel")
     
     args = parser.parse_args()
+    
+    # Load .env file
+    load_env_file()
     
     if not any([args.redis, args.agent, args.n8n, args.dashboard]):
         args.all = True
