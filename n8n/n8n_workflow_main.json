@@ -1,0 +1,299 @@
+{
+    "nodes": [
+        {
+            "parameters": {
+                "updates": [
+                    "message"
+                ],
+                "additionalFields": {}
+            },
+            "type": "n8n-nodes-base.telegramTrigger",
+            "typeVersion": 1,
+            "position": [
+                144,
+                0
+            ],
+            "id": "c38f6719-03b1-42b5-8a1b-6e609e852de8",
+            "name": "Telegram Trigger",
+            "webhookId": "38151ab9-2535-4c07-bc2e-367336ce9be1",
+            "credentials": {
+                "telegramApi": {
+                    "id": "S0vdRjmf9wwtVJhb",
+                    "name": "Telegram account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "resource": "chat",
+                "model": "gpt-4",
+                "messages": {
+                    "values": [
+                        {
+                            "role": "system",
+                            "content": "You are an expert Technical Architect. Your job is to analyze the user's request and refine it into a polished, detailed technical task description that a 'Plan Agent' can understand. \n\nFocus on:\n1. Clear Objective\n2. Key Functional Requirements\n3. Technical Constraints (Python, Redis, n8n, FastAPI environment)\n\nOutput ONLY the refined technical task description, no conversational filler."
+                        },
+                        {
+                            "role": "user",
+                            "content": "={{ $json.message.text }}"
+                        }
+                    ]
+                }
+            },
+            "type": "n8n-nodes-base.openAi",
+            "typeVersion": 1,
+            "position": [
+                360,
+                0
+            ],
+            "id": "e01340cd-40af-4a51-a348-e83a0e543997",
+            "name": "Refine Requirements",
+            "credentials": {
+                "openAiApi": {
+                    "id": "YOUR_OPENAI_CREDENTIAL_ID",
+                    "name": "OpenAI account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://127.0.0.1:8001/event/ingest",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "task",
+                            "value": "={{ $json.content }}"
+                        },
+                        {
+                            "name": "context",
+                            "value": "={{ { chat_id: $node['Telegram Trigger'].json.message.chat.id, user_id: $node['Telegram Trigger'].json.message.from.id, platform: 'telegram', original_request: $node['Telegram Trigger'].json.message.text } }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                580,
+                0
+            ],
+            "id": "2c4d7d4f-500c-4749-8677-7faabede395c",
+            "name": "Create Event"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $node['Telegram Trigger'].json.message.chat.id }}",
+                "text": "={{ '✅ Task Registered!\\n\\n� Original: ' + $node['Telegram Trigger'].json.message.text + '\\n\\n🤖 Refined: ' + $node['Refine Requirements'].json.content + '\\n\\n(Event ID: ' + $json.event_id + ')' }}",
+                "additionalFields": {}
+            },
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                800,
+                0
+            ],
+            "id": "88f5f8df-eeb1-49ed-9cf6-53d36fcf0052",
+            "name": "Reply to User",
+            "webhookId": "3d3c67e1-09e6-447a-acb5-0c2aefaea3da",
+            "credentials": {
+                "telegramApi": {
+                    "id": "S0vdRjmf9wwtVJhb",
+                    "name": "Telegram account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "path": "webhook-plan-report",
+                "options": {
+                    "responseMode": "lastNode"
+                }
+            },
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [
+                144,
+                300
+            ],
+            "id": "0f6c611b-97f1-4c1e-9f87-f26bda786ccf",
+            "name": "PLAN-REPORT-WEBHOOK",
+            "webhookId": "webhook-plan-report"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.body.context.chat_id }}",
+                "text": "={{ '📝 PLAN Completed:\\n' + $json.body.output }}",
+                "additionalFields": {}
+            },
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                360,
+                300
+            ],
+            "id": "edfe7f63-96f2-4554-8448-c210ed6d2348",
+            "name": "[PLAN] Report",
+            "webhookId": "3d3c67e1-09e6-447a-acb5-0c2aefaea3da",
+            "credentials": {
+                "telegramApi": {
+                    "id": "S0vdRjmf9wwtVJhb",
+                    "name": "Telegram account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "path": "webhook-impl-report",
+                "options": {
+                    "responseMode": "lastNode"
+                }
+            },
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [
+                144,
+                500
+            ],
+            "id": "af474908-3c73-405b-b9bd-02bcb3de2f7d",
+            "name": "IMPLEMENT-REPORT-WEBHOOK",
+            "webhookId": "webhook-impl-report"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.body.context.chat_id }}",
+                "text": "={{ '💻 IMPLEMENTATION Completed:\\n' + $json.body.output }}",
+                "additionalFields": {}
+            },
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                360,
+                500
+            ],
+            "id": "9d03f038-4f93-487c-a0b2-b1fee59a8629",
+            "name": "[IMPL] Report",
+            "webhookId": "10646e7e-a98a-4e0a-86df-ac210397a83b",
+            "credentials": {
+                "telegramApi": {
+                    "id": "S0vdRjmf9wwtVJhb",
+                    "name": "Telegram account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "path": "webhook-test-report",
+                "options": {
+                    "responseMode": "lastNode"
+                }
+            },
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [
+                144,
+                700
+            ],
+            "id": "849b7e6b-238e-40e7-b81f-f201f7fe65de",
+            "name": "TEST-REPORT-WEBHOOK",
+            "webhookId": "webhook-test-report"
+        },
+        {
+            "parameters": {
+                "chatId": "={{ $json.body.context.chat_id }}",
+                "text": "={{ '✅ TEST Completed:\\n' + $json.body.output }}",
+                "additionalFields": {}
+            },
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                360,
+                700
+            ],
+            "id": "3c477d51-61bb-41a4-964e-3f3d0106a94c",
+            "name": "[TEST] Report",
+            "webhookId": "836ec327-20d3-4fad-9614-3e6462acc5ec",
+            "credentials": {
+                "telegramApi": {
+                    "id": "S0vdRjmf9wwtVJhb",
+                    "name": "Telegram account"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Telegram Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Refine Requirements",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Refine Requirements": {
+            "main": [
+                [
+                    {
+                        "node": "Create Event",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Event": {
+            "main": [
+                [
+                    {
+                        "node": "Reply to User",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "PLAN-REPORT-WEBHOOK": {
+            "main": [
+                [
+                    {
+                        "node": "[PLAN] Report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "IMPLEMENT-REPORT-WEBHOOK": {
+            "main": [
+                [
+                    {
+                        "node": "[IMPL] Report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "TEST-REPORT-WEBHOOK": {
+            "main": [
+                [
+                    {
+                        "node": "[TEST] Report",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "0f86d64d2cd76a91e979ae881487653381dd65c118e5834031f33f26af6c01b1"
+    }
+}

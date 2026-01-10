@@ -1,0 +1,38 @@
+{
+    "meta": {
+        "event_id": "evt_550e8400-e29b-41d4-a716-446655440000",
+        "trace_id": "trc_telegram_123456789_9876",
+        "timestamp": "2024-01-14T12:00:00Z",
+        "source": "telegram_bot",
+        "version": "1.0"
+    },
+    "context": {
+        "user_id": 123456789,
+        "chat_id": 987654321,
+        "platform": "telegram"
+    },
+    "task": {
+        "title": "task-1768022309",
+        "type": "CODE_ORCHESTRATION",
+        "status": "PENDING",
+        "current_stage": "PLAN",
+        "original_prompt": "파이썬으로 뱀 게임 만들어줘",
+        "git_context": {
+            "repo_url": "https://github.com/username/repo.git",
+            "branch_name": "main"
+        }
+    },
+    "data": {
+        "plan": null,
+        "code": null,
+        "test_results": null,
+        "artifacts": []
+    },
+    "history": [
+        {
+            "stage": "INGRESS",
+            "timestamp": "2024-01-14T12:00:00Z",
+            "message": "Task received via Telegram"
+        }
+    ]
+}
