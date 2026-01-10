@@ -18,6 +18,7 @@ CLOUDFLARED_PATH = "./cloudflare/cloudflared" # Path to cloudflared binary
 REDIS_SERVER_PATH = "/opt/homebrew/opt/redis/bin/redis-server"
 REDIS_CONF_PATH = "/opt/homebrew/etc/redis.conf"
 BACKEND_PATH = "./backend"
+CONFIG_FILE_PATH = "./dashboard/src/config.js"
 
 processes = []
 
@@ -63,32 +64,55 @@ def stream_reader(pipe, prefix):
     except ValueError:
         pass
 
-def find_tunnel_url(pipe):
+def find_tunnel_url(pipe, prefix="Cloudflared"):
     """Reads cloudflared output to find the tunnel URL."""
     url = None
-    # Regex to capture https://<random>.trycloudflare.com
     url_pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
     
-    for line in iter(pipe.readline, ''):
-        print(f"[Cloudflared] {line.strip()}")
+    # We must read from the pipe without blocking indefinitely if no URL found
+    # But usually cloudflared outputs the URL within first few seconds
+    while True:
+        line = pipe.readline()
+        if not line:
+            break
+        print(f"[{prefix}] {line.strip()}")
         if not url:
             match = url_pattern.search(line)
             if match:
                 url = match.group(0)
-                return url
-    return None
+                # Don't return yet, we want to start a thread to keep reading
+                return url, pipe
+    return None, pipe
+
+def update_frontend_config(url):
+    """Updates the API_BASE_URL in dashboard/src/config.js with the new tunnel URL."""
+    try:
+        if not os.path.exists(CONFIG_FILE_PATH):
+            log(f"Config file not found: {CONFIG_FILE_PATH}")
+            return
+            
+        with open(CONFIG_FILE_PATH, 'r') as f:
+            content = f.read()
+            
+        # Replace API_BASE_URL: '...' or "..." with the new URL
+        new_content = re.sub(r"API_BASE_URL:.*", f"API_BASE_URL: '{url}',", content)
+        
+        with open(CONFIG_FILE_PATH, 'w') as f:
+            f.write(new_content)
+        log(f"Successfully updated {CONFIG_FILE_PATH} with {url}")
+    except Exception as e:
+        log(f"Error updating config file: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Start the AI System Services")
     parser.add_argument("--all", action="store_true", help="Start all services (Default)")
     parser.add_argument("--redis", action="store_true", help="Start Redis")
-    parser.add_argument("--agent", action="store_true", help="Start Code Agent API")
+    parser.add_argument("--agent", action="store_true", help="Start Code Agent API & Tunnel")
     parser.add_argument("--n8n", action="store_true", help="Start n8n & Tunnel")
-    parser.add_argument("--dashboard", action="store_true", help="Start Frontend Dashboard")
+    parser.add_argument("--dashboard", action="store_true", help="Start Frontend Dashboard & Tunnel")
     
     args = parser.parse_args()
     
-    # Default to all if no specific service requested
     if not any([args.redis, args.agent, args.n8n, args.dashboard]):
         args.all = True
 
@@ -97,119 +121,96 @@ def main():
     run_n8n = args.all or args.n8n
     run_dashboard = args.all or args.dashboard
 
-    # Register signal handlers for graceful shutdown (Ctrl+C)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # 1. Clean up ports
     log("Cleaning up ports...")
     if run_n8n: kill_process_on_port(N8N_PORT)
     if run_agent: kill_process_on_port(AGENT_PORT)
     if run_redis: kill_process_on_port(REDIS_PORT)
     if run_dashboard: kill_process_on_port(DASHBOARD_PORT)
 
-    # 2. Start Redis
+    # 1. Start Redis
     if run_redis:
         log("Starting Redis...")
         redis_cmd = [REDIS_SERVER_PATH, REDIS_CONF_PATH]
-        redis_proc = subprocess.Popen(
-            redis_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        redis_proc = subprocess.Popen(redis_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         processes.append(redis_proc)
         threading.Thread(target=stream_reader, args=(redis_proc.stdout, "Redis"), daemon=True).start()
-        time.sleep(1) # Wait for Redis to warm up
+        time.sleep(1)
 
-    # 3. Start Code Agent (FastAPI)
+    # 2. Start Code Agent (FastAPI) & Tunnel
     if run_agent:
         log("Starting Code Agent (FastAPI)...")
         agent_cmd = [VENV_PYTHON, f"{BACKEND_PATH}/main.py"]
-        agent_proc = subprocess.Popen(
-            agent_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=os.getcwd()
-        )
+        agent_proc = subprocess.Popen(agent_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         processes.append(agent_proc)
         threading.Thread(target=stream_reader, args=(agent_proc.stdout, "Agent-Out"), daemon=True).start()
-        threading.Thread(target=stream_reader, args=(agent_proc.stderr, "Agent-Err"), daemon=True).start()
-        time.sleep(1)
-
-    # 4. Start Cloudflare Tunnel & n8n
-    if run_n8n:
-        log("Starting Cloudflare Tunnel...")
-        tunnel_cmd = [CLOUDFLARED_PATH, "tunnel", "--url", f"http://localhost:{N8N_PORT}"]
-        tunnel_proc = subprocess.Popen(
-            tunnel_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, # Cloudflared logs to stderr usually
-            text=True,
-            cwd=os.getcwd()
-        )
-        processes.append(tunnel_proc)
-
-        # We need to capture the URL from stderr/stdout
-        tunnel_url = find_tunnel_url(tunnel_proc.stderr)
         
-        if tunnel_url:
-            log(f"Tunnel established at: {tunnel_url}")
-            # Keep reading the rest of the logs in background
-            threading.Thread(target=stream_reader, args=(tunnel_proc.stderr, "Cloudflared"), daemon=True).start()
+        log("Starting Backend Cloudflare Tunnel...")
+        be_tunnel_cmd = [CLOUDFLARED_PATH, "tunnel", "--url", f"http://localhost:{AGENT_PORT}"]
+        be_tunnel_proc = subprocess.Popen(be_tunnel_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        processes.append(be_tunnel_proc)
+        
+        be_url, pipe = find_tunnel_url(be_tunnel_proc.stderr, "BE-Tunnel")
+        if be_url:
+            log(f"Backend Tunnel URL: {be_url}")
+            update_frontend_config(be_url)
+            threading.Thread(target=stream_reader, args=(pipe, "BE-Tunnel"), daemon=True).start()
+        else:
+            log("Failed to start Backend Tunnel.")
+
+    # 3. Start n8n & Tunnel
+    if run_n8n:
+        log("Starting n8n Cloudflare Tunnel...")
+        n8n_tunnel_cmd = [CLOUDFLARED_PATH, "tunnel", "--url", f"http://localhost:{N8N_PORT}"]
+        n8n_tunnel_proc = subprocess.Popen(n8n_tunnel_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        processes.append(n8n_tunnel_proc)
+
+        n8n_url, pipe = find_tunnel_url(n8n_tunnel_proc.stderr, "n8n-Tunnel")
+        if n8n_url:
+            log(f"n8n Tunnel URL: {n8n_url}")
+            threading.Thread(target=stream_reader, args=(pipe, "n8n-Tunnel"), daemon=True).start()
             
-            # 5. Start n8n
-            log(f"Starting n8n with WEBHOOK_URL={tunnel_url}...")
+            log(f"Starting n8n with WEBHOOK_URL={n8n_url}...")
             env = os.environ.copy()
-            env["WEBHOOK_URL"] = tunnel_url
+            env["WEBHOOK_URL"] = n8n_url
             env["N8N_BLOCK_PRIVATE_IPS"] = "false"
-            
-            n8n_cmd = ["n8n", "start"]
-            n8n_proc = subprocess.Popen(
-                n8n_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                cwd=os.getcwd()
-            )
+            n8n_proc = subprocess.Popen(["n8n", "start"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
             processes.append(n8n_proc)
             threading.Thread(target=stream_reader, args=(n8n_proc.stdout, "n8n-Out"), daemon=True).start()
-            threading.Thread(target=stream_reader, args=(n8n_proc.stderr, "n8n-Err"), daemon=True).start()
         else:
-            log("Failed to find tunnel URL. Skipping n8n start.")
-            # Don't exit, other services might be running
+            log("Failed to start n8n Tunnel.")
 
-    # 6. Start Frontend Dashboard
+    # 4. Start Frontend Dashboard & Tunnel
     if run_dashboard:
-        log("Starting Frontend Dashboard...")
-        dashboard_cmd = ["npm", "run", "dev", "--", "--port", str(DASHBOARD_PORT)]
-        dashboard_proc = subprocess.Popen(
-            dashboard_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=os.path.join(os.getcwd(), "dashboard")
-        )
+        log("Starting Frontend Dashboard (Vite)...")
+        dashboard_proc = subprocess.Popen(["npm", "run", "dev", "--", "--port", str(DASHBOARD_PORT)], 
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, 
+                                        cwd="./dashboard")
         processes.append(dashboard_proc)
         threading.Thread(target=stream_reader, args=(dashboard_proc.stdout, "Dash-Out"), daemon=True).start()
-        threading.Thread(target=stream_reader, args=(dashboard_proc.stderr, "Dash-Err"), daemon=True).start()
-        log(f"Dashboard accessible at http://localhost:{DASHBOARD_PORT}")
 
-    log("Selected services are running! Press Ctrl+C to stop.")
+        log("Starting Frontend Cloudflare Tunnel...")
+        fe_tunnel_cmd = [CLOUDFLARED_PATH, "tunnel", "--url", f"http://localhost:{DASHBOARD_PORT}"]
+        fe_tunnel_proc = subprocess.Popen(fe_tunnel_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        processes.append(fe_tunnel_proc)
+        
+        fe_url, pipe = find_tunnel_url(fe_tunnel_proc.stderr, "FE-Tunnel")
+        if fe_url:
+            log(f"✅ Frontend Tunnel established at: {fe_url}")
+            threading.Thread(target=stream_reader, args=(pipe, "FE-Tunnel"), daemon=True).start()
+        else:
+            log("Failed to start Frontend Tunnel.")
+
+    log("🎉 All selected services are running! Press Ctrl+C to stop.")
     
-    # Keep the main thread alive watching processes
     while True:
         if not processes:
-            log("No processes running. Exiting.")
             sys.exit(0)
-            
         for p in processes:
             if p.poll() is not None:
-                log(f"A process has died! (Return Code: {p.returncode})")
-                # Remove dead process? Or shutdown all?
-                # For now let's cleanup all if one important one dies
+                log(f"Critical process died! Return Code: {p.returncode}")
                 cleanup()
         time.sleep(1)
 
