@@ -192,6 +192,20 @@ class Orchestrator:
         new_state_def = workflow.states.get(work_item.current_state)
         if new_state_def:
             self._execute_actions(work_item, new_state_def.on_enter)
+            
+            # Send Telegram Notification for Approval
+            if new_state_def.requires_approvals:
+                from core.telegram_bot import send_telegram_notification
+                chat_id = work_item.meta.get("chat_id")
+                if chat_id:
+                    approvals = ", ".join([a.replace('_APPROVED', '').replace('_', ' ') for a in new_state_def.requires_approvals])
+                    send_telegram_notification(
+                        str(chat_id),
+                        f"🔔 <b>승인 요청 ({work_item.current_state})</b>\n\n"
+                        f"태스크: {work_item.title}\n"
+                        f"필요 승인: {approvals}\n\n"
+                        f"진행하려면 승인이 필요합니다."
+                    )
         
         logger.info(
             f"WorkItem {work_item.id}: {previous_state} -> {work_item.current_state} "

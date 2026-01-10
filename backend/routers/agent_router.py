@@ -167,6 +167,17 @@ def agent_process(agent_name: str):
         
         add_log(agent_key, f"Waiting for clarification: {event_id}", "pending")
         
+        # Send Telegram Notification
+        from core.telegram_bot import send_telegram_notification
+        chat_id = event.get("context", {}).get("chat_id")
+        if chat_id:
+            logger.info(f"Sending Telegram notification to {chat_id}") # Add logger check
+            send_telegram_notification(
+                str(chat_id),
+                f"❓ <b>추가 정보가 필요합니다</b>\n\n{event['task'].get('clarification_question')}\n\n"
+                f"요청: {event['task'].get('original_prompt')[:50]}..."
+            )
+        
         return {
             "status": "needs_clarification",
             "event_id": event_id,
@@ -255,3 +266,139 @@ def run_pipeline():
             break
     
     return {"pipeline_results": results}
+
+
+# =============================================================================
+# PENDING ACTIONS API (Human-in-the-loop)
+# =============================================================================
+
+from pydantic import BaseModel
+
+class PendingResponseRequest(BaseModel):
+    """Request model for pending item response."""
+    response: str
+
+
+@router.get("/pending")
+def get_pending_items():
+    """
+    Get all pending items requiring human action.
+    
+    Returns:
+        - Clarification requests (from Requirements Agent)
+        - Approval requests (from DESIGN state: UX/ARCH approvals)
+    """
+    r = get_redis()
+    if not r:
+        return {"error": "Redis not connected", "pending_items": []}
+    
+    pending_items = []
+    
+    # 1. Get clarification requests
+    clarification_keys = r.keys("waiting:clarification:*")
+    for key in clarification_keys:
+        event_json = r.get(key)
+        if event_json:
+            event = json.loads(event_json)
+            event_id = key.replace("waiting:clarification:", "")
+            pending_items.append({
+                "id": event_id,
+                "type": "clarification",
+                "question": event.get("task", {}).get("clarification_question", "추가 정보가 필요합니다"),
+                "original_prompt": event.get("task", {}).get("original_prompt", ""),
+                "created_at": event.get("meta", {}).get("timestamp", ""),
+                "context": event.get("context", {})
+            })
+    
+    # 2. Get pending approvals from WorkItems in DESIGN state
+    # (These are stored by the workflow orchestrator)
+    from workflow.orchestrator import Orchestrator
+    orchestrator = Orchestrator(r)
+    work_items = orchestrator.list_work_items()
+    
+    for wi in work_items:
+        # Check if in DESIGN state with pending approvals
+        if wi.current_state == "DESIGN":
+            pending_approvals = []
+            if not wi.approval_flags.get("UX_APPROVED"):
+                pending_approvals.append("UX")
+            if not wi.approval_flags.get("ARCH_APPROVED"):
+                pending_approvals.append("ARCH")
+            
+            if pending_approvals:
+                pending_items.append({
+                    "id": wi.id,
+                    "type": "approval",
+                    "title": wi.title,
+                    "current_state": wi.current_state,
+                    "pending_approvals": pending_approvals,
+                    "approval_flags": wi.approval_flags,
+                    "created_at": wi.created_at.isoformat() if hasattr(wi.created_at, 'isoformat') else str(wi.created_at),
+                    "meta": wi.meta
+                })
+        
+        # Check if in RELEASE state needing approval
+        elif wi.current_state == "RELEASE":
+            pending_items.append({
+                "id": wi.id,
+                "type": "approval",
+                "title": wi.title,
+                "current_state": wi.current_state,
+                "pending_approvals": ["RELEASE"],
+                "created_at": wi.created_at.isoformat() if hasattr(wi.created_at, 'isoformat') else str(wi.created_at),
+                "meta": wi.meta
+            })
+    
+    # Sort by created_at (newest first)
+    pending_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    
+    return {
+        "count": len(pending_items),
+        "pending_items": pending_items
+    }
+
+
+@router.post("/pending/{item_id}/respond")
+def respond_to_pending(item_id: str, request: PendingResponseRequest):
+    """
+    Submit a response to a pending clarification request.
+    
+    This is equivalent to /event/clarify but with a simpler interface.
+    """
+    r = get_redis()
+    if not r:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    
+    waiting_key = f"waiting:clarification:{item_id}"
+    event_json = r.get(waiting_key)
+    
+    if not event_json:
+        raise HTTPException(status_code=404, detail=f"Pending item not found: {item_id}")
+    
+    event = json.loads(event_json)
+    
+    # Append response to original prompt
+    original = event["task"].get("original_prompt", "")
+    event["task"]["original_prompt"] = f"{original}\n\n[사용자 추가 정보]: {request.response}"
+    event["task"]["needs_clarification"] = False
+    event["task"]["clarification_question"] = None
+    
+    # Add to history
+    event["history"].append({
+        "stage": "CLARIFICATION_RESPONSE",
+        "timestamp": datetime.now().isoformat(),
+        "message": f"User responded: {request.response[:100]}..."
+    })
+    
+    # Remove from waiting and push back to requirement queue
+    r.delete(waiting_key)
+    push_event("queue:REQUIREMENT", event)
+    
+    add_log("PENDING", f"Clarification response received for {item_id}", "success")
+    
+    return {
+        "status": "responded",
+        "item_id": item_id,
+        "message": "Response submitted. Item moved back to processing queue."
+    }
+
