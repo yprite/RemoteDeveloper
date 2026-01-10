@@ -9,6 +9,24 @@ from typing import List, Dict, Any
 logs: List[Dict[str, Any]] = []
 MAX_LOGS = 200
 
+# 로그에서 제외할 경로들 (프론트엔드 폴링 API)
+EXCLUDED_PATHS = [
+    '/agent/logs',
+    '/queues', 
+    '/pending',
+]
+
+
+class AccessLogFilter(logging.Filter):
+    """특정 경로에 대한 access log를 필터링"""
+    
+    def filter(self, record):
+        # uvicorn access log 메시지에서 경로 확인
+        message = record.getMessage()
+        for path in EXCLUDED_PATHS:
+            if f'"{path}' in message or f' {path} ' in message:
+                return False  # 이 로그는 출력하지 않음
+        return True  # 다른 로그는 출력
 
 class InMemoryLogHandler(logging.Handler):
     """Custom log handler that stores logs in memory for API access."""
@@ -68,6 +86,9 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn.access").addHandler(log_handler)
     logging.getLogger().setLevel(logging.INFO)
 
+    # uvicorn.access 로거에 필터 추가 (폴링 API 로그 제외)
+    access_filter = AccessLogFilter()
+    logging.getLogger("uvicorn.access").addFilter(access_filter)
 
 def get_logs() -> List[Dict[str, Any]]:
     """Get all stored logs."""
