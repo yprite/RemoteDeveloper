@@ -24,7 +24,11 @@ function App() {
   const [selectedTask, setSelectedTask] = useState(null)
   const [agentStatus, setAgentStatus] = useState({})
   const [isConnected, setIsConnected] = useState(false)
-  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline' or 'logs'
+  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', or 'pending'
+
+  // Pending Actions State
+  const [pendingItems, setPendingItems] = useState([])
+  const [clarificationResponse, setClarificationResponse] = useState({})
 
   // Filtering States for Logs
   const [logSearch, setLogSearch] = useState('')
@@ -66,6 +70,50 @@ function App() {
       const res = await fetch(`${config.API_BASE_URL}/queues`)
       const data = await res.json()
       setQueues(data.queues || {})
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchPending = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/pending`)
+      const data = await res.json()
+      setPendingItems(data.pending_items || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleClarificationSubmit = async (itemId) => {
+    const response = clarificationResponse[itemId]
+    if (!response?.trim()) return
+
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/pending/${itemId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response })
+      })
+      if (res.ok) {
+        setClarificationResponse(prev => ({ ...prev, [itemId]: '' }))
+        fetchPending()
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleApproval = async (workItemId, approvalType, approved) => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/workitem/${workItemId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approval_type: approvalType, approved })
+      })
+      if (res.ok) {
+        fetchPending()
+      }
     } catch (e) {
       console.error(e)
     }
@@ -126,6 +174,7 @@ function App() {
     const fetchAll = () => {
       fetchLogs()
       fetchQueues()
+      fetchPending()
     }
     fetchAll()
     const interval = setInterval(fetchAll, 1000)
@@ -253,7 +302,7 @@ function App() {
               })}
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'logs' ? (
           <div className="logs-tab">
             <div className="logs-controls">
               <input
@@ -309,7 +358,105 @@ function App() {
               ))}
             </div>
           </div>
-        )}
+        ) : activeTab === 'pending' ? (
+          <div className="pending-tab">
+            <div className="pending-header">
+              <h2>⏳ 대기 중인 항목</h2>
+              <span className="pending-count">{pendingItems.length}개</span>
+            </div>
+
+            {pendingItems.length === 0 ? (
+              <div className="empty-pending">
+                <span className="empty-icon">✅</span>
+                <p>처리 대기 중인 항목이 없습니다</p>
+              </div>
+            ) : (
+              <div className="pending-list">
+                {pendingItems.map(item => (
+                  <div key={item.id} className={`pending-card ${item.type}`}>
+                    <div className="pending-card-header">
+                      <span className="pending-type-badge">
+                        {item.type === 'clarification' ? '💬 정보 요청' : '✅ 승인 필요'}
+                      </span>
+                      <span className="pending-time">
+                        {new Date(item.created_at).toLocaleString()}
+                      </span>
+                    </div>
+
+                    {item.type === 'clarification' ? (
+                      <div className="clarification-content">
+                        <div className="question-box">
+                          <strong>질문:</strong> {item.question}
+                        </div>
+                        {item.original_prompt && (
+                          <div className="original-prompt">
+                            <strong>원본 요청:</strong> {item.original_prompt.substring(0, 200)}...
+                          </div>
+                        )}
+                        <div className="response-form">
+                          <textarea
+                            placeholder="추가 정보를 입력하세요..."
+                            value={clarificationResponse[item.id] || ''}
+                            onChange={(e) => setClarificationResponse(prev => ({
+                              ...prev,
+                              [item.id]: e.target.value
+                            }))}
+                          />
+                          <button
+                            className="submit-btn"
+                            onClick={() => handleClarificationSubmit(item.id)}
+                          >
+                            응답 제출
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="approval-content">
+                        <div className="approval-title">{item.title}</div>
+                        <div className="approval-state">상태: {item.current_state}</div>
+
+                        {/* Image display for UX/UI approvals */}
+                        {item.meta?.images && item.meta.images.length > 0 && (
+                          <div className="approval-images">
+                            {item.meta.images.map((img, idx) => (
+                              <img
+                                key={idx}
+                                src={img.url || img}
+                                alt={img.alt || `Design ${idx + 1}`}
+                                className="approval-image"
+                                onClick={() => window.open(img.url || img, '_blank')}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="approval-buttons">
+                          {item.pending_approvals.map(approvalType => (
+                            <div key={approvalType} className="approval-action">
+                              <span className="approval-label">{approvalType} 승인:</span>
+                              <button
+                                className="approve-btn"
+                                onClick={() => handleApproval(item.id, approvalType, true)}
+                              >
+                                ✓ 승인
+                              </button>
+                              <button
+                                className="reject-btn"
+                                onClick={() => handleApproval(item.id, approvalType, false)}
+                              >
+                                ✗ 거절
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
       </main>
 
       {/* Bottom Navigation Bar */}
@@ -328,10 +475,15 @@ function App() {
           <span className="nav-icon">📜</span>
           <span className="nav-label">Logs</span>
         </button>
-        {/* Placeholder for future features */}
-        <button className="nav-item">
-          <span className="nav-icon">⚙️</span>
-          <span className="nav-label">Settings</span>
+        <button
+          className={`nav-item ${activeTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setActiveTab('pending')}
+        >
+          <span className="nav-icon">⏳</span>
+          <span className="nav-label">Pending</span>
+          {pendingItems.length > 0 && (
+            <span className="pending-nav-badge">{pendingItems.length}</span>
+          )}
         </button>
       </nav>
 
