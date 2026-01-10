@@ -15,7 +15,9 @@
         "title": "task-1768022309",
         "type": "CODE_ORCHESTRATION",
         "status": "PENDING",
-        "current_stage": "PLAN",
+        "current_stage": "REQUIREMENT",
+        "needs_clarification": false,
+        "clarification_question": null,
         "original_prompt": "파이썬으로 뱀 게임 만들어줘",
         "git_context": {
             "repo_url": "https://github.com/username/repo.git",
@@ -23,9 +25,16 @@
         }
     },
     "data": {
+        "requirement": null,
         "plan": null,
+        "ux_ui": null,
+        "architecture": null,
         "code": null,
+        "refactoring": null,
         "test_results": null,
+        "documentation": null,
+        "release": null,
+        "monitoring": null,
         "artifacts": []
     },
     "history": [
