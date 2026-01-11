@@ -1,0 +1,6 @@
+2026-01-11 10:31:22,157 - worker - ERROR - Worker error processing evt_1768085885: '\n        "needs_clarification"'
+2026-01-11 10:31:22,158 - ai_dev_team - ERROR - [REQUIREMENT] Error: '\n        "needs_clarification"'
+2026-01-11 10:31:24,165 - worker - ERROR - Worker error processing evt_1768093938: '\n        "needs_clarification"'
+2026-01-11 10:31:24,166 - ai_dev_team - ERROR - [REQUIREMENT] Error: '\n        "needs_clarification"'
+2026-01-11 10:33:08,557 - worker - ERROR - Worker error processing evt_1768095187: '\n        "needs_clarification"'
+2026-01-11 10:33:08,558 - ai_dev_team - ERROR - [REQUIREMENT] Error: '\n        "needs_clarification"'

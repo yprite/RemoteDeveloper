@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from core.logging_config import logger
@@ -9,13 +10,26 @@ class LLMService:
         self.api_key = os.getenv("OPENAI_API_KEY")
         if not self.api_key:
             logger.warning("OPENAI_API_KEY not found in environment variables. LLM calls will fail.")
-            # Prevent OpenAI client crash on missing key by using a dummy if needed, 
-            # or just don't init client yet if the library supports it. 
-            # OpenAI python client requires api_key. We'll pass a dummy to allow startup.
             self.client = OpenAI(api_key="missing_key")
         else:
             self.client = OpenAI(api_key=self.api_key)
-        self.default_model = "gpt-4o" # or gpt-4-turbo
+        self.default_model = "gpt-4o"
+
+    def extract_json(self, text: str) -> str:
+        """Extract JSON from text, removing markdown code blocks if present."""
+        # Remove ```json ... ``` blocks
+        pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
+        
+        # Try to find JSON object directly
+        json_pattern = r'\{[\s\S]*\}'
+        match = re.search(json_pattern, text)
+        if match:
+            return match.group(0)
+        
+        return text
 
     def chat_completion(self, 
                         system_prompt: str, 
@@ -24,7 +38,7 @@ class LLMService:
                         json_mode: bool = False) -> str:
         
         if not self.api_key:
-            return "Error: OpenAI API Key not configured."
+            return '{"error": "OpenAI API Key not configured."}'
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -41,7 +55,15 @@ class LLMService:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = self.client.chat.completions.create(**kwargs)
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            
+            # Clean up response if JSON mode
+            if json_mode:
+                content = self.extract_json(content)
+            
+            return content
         except Exception as e:
             logger.error(f"LLM Call failed: {e}")
+            if json_mode:
+                return json.dumps({"error": str(e)})
             return f"Error executing LLM request: {str(e)}"
