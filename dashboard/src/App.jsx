@@ -53,6 +53,8 @@ function App() {
   const [isSheetExpanded, setIsSheetExpanded] = useState(false)
   const [dragY, setDragY] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  const [sheetTab, setSheetTab] = useState('queue') // 'queue' or 'history'
+  const [agentHistory, setAgentHistory] = useState([])
   const startTouchY = useRef(0)
   const sheetRef = useRef(null)
 
@@ -305,11 +307,21 @@ function App() {
     }
   }
 
-  const handleAgentClick = (agentName) => {
+  const handleAgentClick = async (agentName) => {
     setSelectedAgent(agentName)
     setSelectedTask(null)
     setIsSheetExpanded(false)
     setDragY(0)
+    setSheetTab('queue')
+    // Fetch agent history
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/agent/${agentName}/history?limit=20`)
+      const data = await res.json()
+      setAgentHistory(data.history || [])
+    } catch (e) {
+      console.error(e)
+      setAgentHistory([])
+    }
   }
 
   const handleTaskClick = (task) => {
@@ -880,23 +892,49 @@ function App() {
         <div className="sheet-content">
           {!selectedTask ? (
             <div className="queue-list-section">
-              <div className="section-header">
-                <h4>📥 대기 목록 ({getQueueCount(selectedAgent)})</h4>
+              <div className="sheet-tabs">
+                <button
+                  className={`sheet-tab ${sheetTab === 'queue' ? 'active' : ''}`}
+                  onClick={() => setSheetTab('queue')}
+                >📥 대기 ({getQueueCount(selectedAgent)})</button>
+                <button
+                  className={`sheet-tab ${sheetTab === 'history' ? 'active' : ''}`}
+                  onClick={() => setSheetTab('history')}
+                >📜 처리기록</button>
               </div>
-              <div className="queue-list">
-                {getQueueItems(selectedAgent).map((item, idx) => (
-                  <div key={idx} className="queue-item-card" onClick={() => handleTaskClick(item)}>
-                    <div className="task-header">
-                      <span className="task-id">#{item.meta?.event_id?.slice(-8)}</span>
-                      <span className="task-time">{new Date(item.meta?.timestamp).toLocaleTimeString()}</span>
+
+              {sheetTab === 'queue' ? (
+                <div className="queue-list">
+                  {getQueueItems(selectedAgent).map((item, idx) => (
+                    <div key={idx} className="queue-item-card" onClick={() => handleTaskClick(item)}>
+                      <div className="task-header">
+                        <span className="task-id">#{item.meta?.event_id?.slice(-8)}</span>
+                        <span className="task-time">{new Date(item.meta?.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="task-preview">{item.task?.original_prompt?.substring(0, 60)}...</div>
                     </div>
-                    <div className="task-preview">{item.task?.original_prompt?.substring(0, 60)}...</div>
-                  </div>
-                ))}
-                {getQueueItems(selectedAgent).length === 0 && (
-                  <div className="empty-state">대기 중인 작업이 없습니다.</div>
-                )}
-              </div>
+                  ))}
+                  {getQueueItems(selectedAgent).length === 0 && (
+                    <div className="empty-state">대기 중인 작업이 없습니다.</div>
+                  )}
+                </div>
+              ) : (
+                <div className="history-list">
+                  {agentHistory.map((item, idx) => (
+                    <div key={idx} className={`history-item-card ${item.status}`}>
+                      <div className="task-header">
+                        <span className="task-id">#{item.task_id?.slice(-8)}</span>
+                        <span className={`status-badge ${item.status}`}>{item.status}</span>
+                      </div>
+                      <div className="task-preview">{item.original_prompt?.substring(0, 50) || item.message}</div>
+                      <div className="task-time">{new Date(item.created_at).toLocaleString()}</div>
+                    </div>
+                  ))}
+                  {agentHistory.length === 0 && (
+                    <div className="empty-state">처리된 기록이 없습니다.</div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="task-detail-section">

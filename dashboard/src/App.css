@@ -1233,3 +1233,84 @@ h1 {
 .toggle-switch input:checked+.toggle-slider:before {
   transform: translateX(22px);
 }
+
+/* ======================================== */
+/* SHEET TABS */
+/* ======================================== */
+
+.sheet-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.sheet-tab {
+  flex: 1;
+  background: #2e3035;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 0.6rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.sheet-tab.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.history-item-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.history-item-card.started {
+  border-left: 3px solid var(--primary);
+}
+
+.history-item-card.completed {
+  border-left: 3px solid var(--success);
+}
+
+.history-item-card.failed,
+.history-item-card.error {
+  border-left: 3px solid var(--danger);
+}
+
+.history-item-card .task-time {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
+
+.status-badge {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+}
+
+.status-badge.started {
+  background: var(--primary);
+  color: white;
+}
+
+.status-badge.completed {
+  background: var(--success);
+  color: white;
+}
+
+.status-badge.failed,
+.status-badge.error {
+  background: var(--danger);
+  color: white;
+}
