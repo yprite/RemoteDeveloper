@@ -93,10 +93,14 @@ class CodeAgent(AgentStrategy):
             
         except json.JSONDecodeError as e:
             logger.error(f"[{self.name}] event={event_id} - JSON decode failed: {e}. Response preview: {response[:300] if response else 'None'}")
+            event["task"]["has_error"] = True
+            event["task"]["error_message"] = f"Code Agent: LLM 응답을 파싱할 수 없습니다"
             output = f"[Error] Code Agent failed to parse JSON"
         except Exception as e:
             input_summary = f"arch_len={len(arch)}, plan_len={len(plan)}"
             logger.error(f"[{self.name}] event={event_id} - {type(e).__name__}: {e}. Input: {input_summary}")
+            event["task"]["has_error"] = True
+            event["task"]["error_message"] = f"Code Agent: {str(e)}"
             output = f"[Error] {str(e)}"
 
         event["data"]["code"] = output

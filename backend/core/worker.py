@@ -51,7 +51,7 @@ def process_queues_once():
             event = agent.process(event)
             
             # Check for clarification (REQUIREMENT agent)
-            if agent_name == "REQUIREMENT" and event.get("task", {}).get("needs_clarification"):
+            if event.get("task", {}).get("needs_clarification"):
                 waiting_key = f"waiting:clarification:{event_id}"
                 r.set(waiting_key, json.dumps(event))
                 add_log(agent_name, f"Waiting for clarification: {event_id}", "pending")
@@ -59,10 +59,43 @@ def process_queues_once():
                 # Telegram notification
                 from core.telegram_bot import send_telegram_notification
                 chat_id = event.get("context", {}).get("chat_id")
+                question = event['task'].get('clarification_question', '추가 정보가 필요합니다')
                 if chat_id:
                     send_telegram_notification(
                         str(chat_id),
-                        f"❓ <b>추가 정보가 필요합니다</b>\n\n{event['task'].get('clarification_question')}"
+                        f"❓ <b>추가 정보가 필요합니다</b>\n\n{question}"
+                    )
+                continue
+            
+            # Check for approval gate (UX/UI, RELEASE, etc.)
+            if event.get("task", {}).get("needs_approval"):
+                waiting_key = f"waiting:approval:{event_id}"
+                r.set(waiting_key, json.dumps(event))
+                add_log(agent_name, f"Waiting for approval: {event_id}", "pending")
+                
+                # Telegram notification
+                from core.telegram_bot import send_telegram_notification
+                chat_id = event.get("context", {}).get("chat_id")
+                approval_msg = event['task'].get('approval_message', '승인이 필요합니다')
+                if chat_id:
+                    send_telegram_notification(
+                        str(chat_id),
+                        f"📋 <b>승인 요청</b>\n\n{approval_msg}\n\n/approve 또는 /reject 로 응답해주세요."
+                    )
+                continue
+            
+            # Check if agent reported an error (stop pipeline)
+            if event.get("task", {}).get("has_error"):
+                add_log(agent_name, f"Pipeline stopped due to error: {event_id}", "failed")
+                
+                # Notify user about the error
+                from core.telegram_bot import send_telegram_notification
+                chat_id = event.get("context", {}).get("chat_id")
+                error_msg = event['task'].get('error_message', '에러가 발생했습니다')
+                if chat_id:
+                    send_telegram_notification(
+                        str(chat_id),
+                        f"❌ <b>파이프라인 중단</b>\n\n{error_msg}"
                     )
                 continue
             
@@ -89,7 +122,7 @@ def process_queues_once():
         except Exception as e:
             logger.error(f"Worker error processing {event_id}: {e}")
             add_log(agent_name, f"Error: {str(e)[:100]}", "failed")
-            # Re-queue on error? For now, just log and continue
+            # Pipeline stops here - event is not pushed to next queue
 
 
 def worker_loop():
