@@ -42,12 +42,20 @@ app.add_middleware(
 # INITIALIZE SERVICES
 # =============================================================================
 
+# Initialize SQLite database
+from core.database import init_database
+init_database()
+
 # Initialize Redis connection
 init_redis()
 
 # Start background worker
 from core.worker import start_worker
 start_worker()
+
+# Start RAG scheduler (background indexing)
+from core.rag_scheduler import start_rag_scheduler
+start_rag_scheduler()
 
 # =============================================================================
 # INCLUDE ROUTERS
