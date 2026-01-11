@@ -38,15 +38,30 @@ class CodeAgent(AgentStrategy):
         return "REFACTORING"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        event_id = event.get("meta", {}).get("event_id", "unknown")
         arch = event["data"].get("architecture", "")
         plan = event["data"].get("plan", "")
         
         formatted_prompt = self.prompt_template.format(architecture=arch, plan=plan)
         llm = self.get_llm_service()  # Uses configured adapter (Claude CLI by default)
-        response = llm.chat_completion(formatted_prompt, "코드를 구현해주세요.", json_mode=True)
         
         try:
+            response = llm.chat_completion(formatted_prompt, "코드를 구현해주세요.", json_mode=True)
+            
+            # Defensive check for None or empty response
+            if not response:
+                logger.error(f"[{self.name}] event={event_id} - LLM returned empty response. Input: arch_len={len(arch)}, plan_len={len(plan)}")
+                event["data"]["code"] = "[Error] LLM returned empty response"
+                return event
+            
             data = json.loads(response)
+            
+            # Defensive check for None after parsing
+            if data is None:
+                logger.error(f"[{self.name}] event={event_id} - JSON parsed to None. Response: {response[:200]}")
+                event["data"]["code"] = "[Error] Invalid JSON response from LLM"
+                return event
+            
             files = data.get("files", [])
             commit_msg = data.get("commit_message", "Implemented features")
             
@@ -68,7 +83,7 @@ class CodeAgent(AgentStrategy):
             try:
                 git.checkout(branch_name, create_if_missing=True)
             except:
-                logger.warning(f"Could not checkout branch {branch_name}, continuing in current branch.")
+                logger.warning(f"[{self.name}] event={event_id} - Could not checkout branch {branch_name}")
             
             for file in files:
                 git.write_file_content(file["path"], file["content"])
@@ -76,11 +91,13 @@ class CodeAgent(AgentStrategy):
             git.commit(commit_msg)
             output = f"[코드 구현 완료]\n- Files: {len(files)}\n- Branch: {branch_name}\n- Commit: {commit_msg}"
             
-        except json.JSONDecodeError:
-             output = f"[Error] Code Agent failed to produce JSON:\n{response[:200]}..."
+        except json.JSONDecodeError as e:
+            logger.error(f"[{self.name}] event={event_id} - JSON decode failed: {e}. Response preview: {response[:300] if response else 'None'}")
+            output = f"[Error] Code Agent failed to parse JSON"
         except Exception as e:
-             output = f"[Error] Git/File Operation failed: {str(e)}"
-             logger.error(f"Code Agent failed: {e}")
+            input_summary = f"arch_len={len(arch)}, plan_len={len(plan)}"
+            logger.error(f"[{self.name}] event={event_id} - {type(e).__name__}: {e}. Input: {input_summary}")
+            output = f"[Error] {str(e)}"
 
         event["data"]["code"] = output
         return event
