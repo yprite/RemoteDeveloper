@@ -25,3 +25,4 @@
 2026-01-11 13:16:52,233 - ai_dev_team - ERROR - LLM Call failed: Error code: 400 - {'error': {'message': "'messages' must contain the word 'json' in some form, to use 'response_format' of type 'json_object'.", 'type': 'invalid_request_error', 'param': 'messages', 'code': None}}
 2026-01-11 13:16:59,306 - agents - ERROR - Code Agent failed: 'NoneType' object has no attribute 'get'
 2026-01-11 13:17:10,944 - agents - ERROR - TestQA Agent failed: Repository not initialized
+2026-01-11 18:34:33,243 - rag_service - ERROR - chromadb not installed. Run: pip install chromadb

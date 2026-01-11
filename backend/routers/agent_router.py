@@ -310,6 +310,24 @@ def get_pending_items():
                 "context": event.get("context", {})
             })
     
+    # 1.5 Get approval requests from Agent pipeline (NEW)
+    approval_keys = r.keys("waiting:approval:*")
+    for key in approval_keys:
+        event_json = r.get(key)
+        if event_json:
+            event = json.loads(event_json)
+            event_id = key.replace("waiting:approval:", "")
+            pending_items.append({
+                "id": event_id,
+                "type": "approval",
+                "title": event.get("task", {}).get("original_prompt", "")[:50],
+                "current_state": event.get("task", {}).get("current_stage", ""),
+                "pending_approvals": [event.get("task", {}).get("current_stage", "UNKNOWN")],
+                "message": event.get("task", {}).get("approval_message", "승인이 필요합니다"),
+                "created_at": event.get("meta", {}).get("timestamp", ""),
+                "context": event.get("context", {})
+            })
+    
     # 2. Get pending approvals from WorkItems in DESIGN state
     # (These are stored by the workflow orchestrator)
     from workflow.orchestrator import Orchestrator
