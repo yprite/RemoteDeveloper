@@ -282,6 +282,21 @@ def add_task_event(task_id: str, agent: str, status: str, message: str = None):
     conn.commit()
 
 
+def get_agent_events(agent: str, limit: int = 20) -> List[Dict]:
+    """Get recent events for a specific agent."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT te.*, th.original_prompt 
+        FROM task_events te
+        LEFT JOIN task_history th ON te.task_id = th.task_id
+        WHERE te.agent = ?
+        ORDER BY te.created_at DESC
+        LIMIT ?
+    """, (agent, limit))
+    return [dict(row) for row in cursor.fetchall()]
+
+
 def get_tasks(limit: int = 50) -> List[Dict]:
     """Get recent tasks."""
     conn = get_connection()

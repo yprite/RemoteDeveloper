@@ -38,6 +38,20 @@ def list_agents():
     }
 
 
+@router.get("/agent/{agent_name}/history")
+def get_agent_history(agent_name: str, limit: int = 20):
+    """Get recent processing history for an agent."""
+    from core.database import get_agent_events
+    
+    if agent_name.upper() not in AGENT_REGISTRY:
+        raise HTTPException(status_code=404, detail=f"Agent {agent_name} not found")
+    
+    events = get_agent_events(agent_name.upper(), limit)
+    return {
+        "agent": agent_name.upper(),
+        "history": events
+    }
+
 @router.post("/event/ingest")
 def event_ingest(request: QueueRequest):
     """Ingress: Receives task and pushes to queue:REQUIREMENT (first agent)."""
