@@ -28,7 +28,10 @@ def trigger_restart():
 
 @router.get("/system/status")
 def get_system_status():
-    """Get status of backend and n8n services."""
+    """Get status of backend, n8n, redis services and debug mode."""
+    from core.database import get_setting
+    from core.redis_client import get_redis
+    
     # Check n8n status
     n8n_running = False
     try:
@@ -37,9 +40,23 @@ def get_system_status():
     except:
         pass
     
+    # Check Redis status
+    redis_running = False
+    try:
+        r = get_redis()
+        if r and r.ping():
+            redis_running = True
+    except:
+        pass
+    
+    # Get debug mode
+    debug_mode = get_setting("debug_mode", False)
+    
     return {
         "backend": "running",
-        "n8n": "running" if n8n_running else "stopped"
+        "n8n": "running" if n8n_running else "stopped",
+        "redis": "running" if redis_running else "stopped",
+        "debugMode": debug_mode
     }
 
 

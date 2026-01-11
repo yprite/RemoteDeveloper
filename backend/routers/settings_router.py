@@ -13,12 +13,29 @@ from core.llm_settings import (
 from core.database import (
     get_repositories,
     add_repository,
-    remove_repository
+    remove_repository,
+    get_setting,
+    set_setting
 )
 from core.rag_scheduler import trigger_indexing
 from core.rag_service import get_rag_service
 
 router = APIRouter(tags=["Settings"])
+
+
+# =============================================================================
+# DEBUG MODE
+# =============================================================================
+
+class DebugModeRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/settings/debug")
+def set_debug_mode(request: DebugModeRequest):
+    """Enable or disable debug mode."""
+    set_setting("debug_mode", request.enabled)
+    return {"status": "updated", "debugMode": request.enabled}
 
 
 # =============================================================================

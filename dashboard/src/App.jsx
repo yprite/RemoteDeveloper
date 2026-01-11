@@ -601,10 +601,62 @@ function App() {
           </div>
         ) : activeTab === 'settings' ? (
           <div className="settings-tab">
+            <h2 className="settings-title">⚙️ 설정</h2>
+
+            {/* Debug Mode Toggle */}
+            <div className="setting-row toggle-row">
+              <div className="setting-row-info">
+                <span className="setting-row-icon">🐛</span>
+                <span className="setting-row-label">디버깅 모드</span>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={systemStatus.debugMode || false}
+                  onChange={async (e) => {
+                    await fetch(`${config.API_BASE_URL}/settings/debug`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ enabled: e.target.checked })
+                    })
+                    fetchSystemStatus()
+                  }}
+                />
+                <span className="toggle-slider"></span>
+              </label>
+            </div>
+
+            {/* LLM Settings Section */}
+            <div
+              className="setting-row expandable"
+              onClick={() => setActiveTab('settings:llm')}
+            >
+              <div className="setting-row-info">
+                <span className="setting-row-icon">🤖</span>
+                <span className="setting-row-label">LLM 설정</span>
+              </div>
+              <span className="chevron">›</span>
+            </div>
+
+            {/* Service Control Section */}
+            <div
+              className="setting-row expandable"
+              onClick={() => setActiveTab('settings:services')}
+            >
+              <div className="setting-row-info">
+                <span className="setting-row-icon">🖥️</span>
+                <span className="setting-row-label">서비스 제어</span>
+              </div>
+              <span className="chevron">›</span>
+            </div>
+          </div>
+        ) : activeTab === 'settings:llm' ? (
+          <div className="settings-tab">
             <div className="settings-header">
-              <h2>⚙️ LLM 설정</h2>
+              <button className="back-btn" onClick={() => setActiveTab('settings')}>← 설정</button>
               <button className="save-btn" onClick={saveLlmSettings}>저장</button>
             </div>
+            <h3>🤖 LLM 설정</h3>
             <p className="settings-desc">각 에이전트가 사용할 LLM 백엔드를 선택하세요.</p>
             <div className="settings-grid">
               {Object.entries(llmSettings).map(([agent, adapter]) => (
@@ -625,46 +677,57 @@ function App() {
                 </div>
               ))}
             </div>
-
-            {/* Service Controls Section */}
-            <div className="settings-section">
-              <h3>🖥️ 서비스 제어</h3>
-              <div className="service-controls">
-                <div className="service-card">
-                  <div className="service-info">
-                    <span className="service-name">Backend</span>
-                    <span className={`service-status ${systemStatus.backend}`}>
-                      {systemStatus.backend === 'running' ? '✅ Running' : '⚠️ Unknown'}
-                    </span>
-                  </div>
+          </div>
+        ) : activeTab === 'settings:services' ? (
+          <div className="settings-tab">
+            <div className="settings-header">
+              <button className="back-btn" onClick={() => setActiveTab('settings')}>← 설정</button>
+            </div>
+            <h3>🖥️ 서비스 제어</h3>
+            <div className="service-controls">
+              <div className="service-card">
+                <div className="service-info">
+                  <span className="service-name">Backend</span>
+                  <span className={`service-status ${systemStatus.backend}`}>
+                    {systemStatus.backend === 'running' ? '✅ Running' : '⚠️ Unknown'}
+                  </span>
+                </div>
+                <button className="service-btn restart" onClick={async () => {
+                  if (confirm('Backend를 재시작하시겠습니까?')) {
+                    await fetch(`${config.API_BASE_URL}/system/restart`, { method: 'POST' })
+                  }
+                }}>🔄 Restart</button>
+              </div>
+              <div className="service-card">
+                <div className="service-info">
+                  <span className="service-name">n8n Workflow</span>
+                  <span className={`service-status ${systemStatus.n8n}`}>
+                    {systemStatus.n8n === 'running' ? '✅ Running' : '❌ Stopped'}
+                  </span>
+                </div>
+                <div className="service-btns">
+                  <button className="service-btn start" onClick={async () => {
+                    await fetch(`${config.API_BASE_URL}/system/n8n/start`, { method: 'POST' })
+                    setTimeout(() => fetchSystemStatus(), 2000)
+                  }}>▶️</button>
+                  <button className="service-btn stop" onClick={async () => {
+                    await fetch(`${config.API_BASE_URL}/system/n8n/stop`, { method: 'POST' })
+                    setTimeout(() => fetchSystemStatus(), 1000)
+                  }}>⏹️</button>
                   <button className="service-btn restart" onClick={async () => {
-                    if (confirm('Backend를 재시작하시겠습니까?')) {
-                      await fetch(`${config.API_BASE_URL}/system/restart`, { method: 'POST' })
-                    }
-                  }}>🔄 Restart</button>
+                    await fetch(`${config.API_BASE_URL}/system/n8n/restart`, { method: 'POST' })
+                    setTimeout(() => fetchSystemStatus(), 2000)
+                  }}>🔄</button>
                 </div>
-                <div className="service-card">
-                  <div className="service-info">
-                    <span className="service-name">n8n Workflow</span>
-                    <span className={`service-status ${systemStatus.n8n}`}>
-                      {systemStatus.n8n === 'running' ? '✅ Running' : '❌ Stopped'}
-                    </span>
-                  </div>
-                  <div className="service-btns">
-                    <button className="service-btn start" onClick={async () => {
-                      await fetch(`${config.API_BASE_URL}/system/n8n/start`, { method: 'POST' })
-                      setTimeout(() => fetchSystemStatus(), 2000)
-                    }}>▶️</button>
-                    <button className="service-btn stop" onClick={async () => {
-                      await fetch(`${config.API_BASE_URL}/system/n8n/stop`, { method: 'POST' })
-                      setTimeout(() => fetchSystemStatus(), 1000)
-                    }}>⏹️</button>
-                    <button className="service-btn restart" onClick={async () => {
-                      await fetch(`${config.API_BASE_URL}/system/n8n/restart`, { method: 'POST' })
-                      setTimeout(() => fetchSystemStatus(), 2000)
-                    }}>🔄</button>
-                  </div>
+              </div>
+              <div className="service-card">
+                <div className="service-info">
+                  <span className="service-name">Redis</span>
+                  <span className={`service-status ${systemStatus.redis || 'unknown'}`}>
+                    {systemStatus.redis === 'running' ? '✅ Running' : '⚠️ Unknown'}
+                  </span>
                 </div>
+                <span className="service-note">start_system.py로 관리</span>
               </div>
             </div>
           </div>

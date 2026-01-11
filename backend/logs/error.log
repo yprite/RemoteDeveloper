@@ -26,3 +26,9 @@
 2026-01-11 13:16:59,306 - agents - ERROR - Code Agent failed: 'NoneType' object has no attribute 'get'
 2026-01-11 13:17:10,944 - agents - ERROR - TestQA Agent failed: Repository not initialized
 2026-01-11 18:34:33,243 - rag_service - ERROR - chromadb not installed. Run: pip install chromadb
+2026-01-11 18:36:27,017 - agents - ERROR - [CODE] event=evt_1768124072 - JSON decode failed: Unterminated string starting at: line 73 column 24 (char 19438). Response preview: {
+    "files": [
+        {
+            "path": "backend/main.py",
+            "content": "from fastapi import FastAPI, HTTPException, Depends\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom pydantic import BaseModel\nfrom typing import List, Optional\nimport redis\nimport jwt\nimport bcryp
+2026-01-11 18:36:27,021 - ai_dev_team - ERROR - [CODE] Pipeline stopped due to error: evt_1768124072
