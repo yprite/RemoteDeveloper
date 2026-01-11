@@ -14,6 +14,7 @@ const AGENT_DISPLAY = {
   DOC: { short: 'DOC', full: '문서화', icon: '📝' },
   RELEASE: { short: 'REL', full: '배포', icon: '🚀' },
   MONITORING: { short: 'MON', full: '모니터링', icon: '📊' },
+  EVALUATION: { short: 'EVAL', full: '작업 평가', icon: '📈' },
 }
 
 function App() {
@@ -24,7 +25,11 @@ function App() {
   const [selectedTask, setSelectedTask] = useState(null)
   const [agentStatus, setAgentStatus] = useState({})
   const [isConnected, setIsConnected] = useState(false)
-  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', or 'pending'
+  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', 'pending', or 'stats'
+
+  // Stats State
+  const [agentMetrics, setAgentMetrics] = useState({})
+  const [improvements, setImprovements] = useState([])
 
   // Pending Actions State
   const [pendingItems, setPendingItems] = useState([])
@@ -80,6 +85,20 @@ function App() {
       const res = await fetch(`${config.API_BASE_URL}/pending`)
       const data = await res.json()
       setPendingItems(data.pending_items || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchMetrics = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/metrics/agents`)
+      const data = await res.json()
+      setAgentMetrics(data.agents || {})
+
+      const impRes = await fetch(`${config.API_BASE_URL}/metrics/improvements`)
+      const impData = await impRes.json()
+      setImprovements(impData.improvements || [])
     } catch (e) {
       console.error(e)
     }
@@ -175,6 +194,7 @@ function App() {
       fetchLogs()
       fetchQueues()
       fetchPending()
+      fetchMetrics()
     }
     fetchAll()
     const interval = setInterval(fetchAll, 1000)
@@ -456,6 +476,57 @@ function App() {
               </div>
             )}
           </div>
+        ) : activeTab === 'stats' ? (
+          <div className="stats-tab">
+            <div className="stats-header">
+              <h2>📈 에이전트 통계</h2>
+            </div>
+            <div className="stats-grid">
+              {Object.entries(agentMetrics).map(([agent, stats]) => (
+                <div key={agent} className="stat-card">
+                  <div className="stat-card-header">
+                    <span className="stat-icon">{AGENT_DISPLAY[agent]?.icon || '🔧'}</span>
+                    <span className="stat-name">{AGENT_DISPLAY[agent]?.full || agent}</span>
+                  </div>
+                  <div className="stat-body">
+                    <div className="stat-row">
+                      <span>총 작업</span>
+                      <strong>{stats.total || 0}</strong>
+                    </div>
+                    <div className="stat-row">
+                      <span>성공률</span>
+                      <strong className={stats.success_rate >= 70 ? 'good' : 'bad'}>
+                        {stats.success_rate || 0}%
+                      </strong>
+                    </div>
+                    <div className="stat-row">
+                      <span>평균 소요</span>
+                      <strong>{stats.avg_duration_ms || 0}ms</strong>
+                    </div>
+                  </div>
+                  <div className="stat-bar">
+                    <div
+                      className="stat-bar-fill"
+                      style={{ width: `${stats.success_rate || 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {Object.keys(agentMetrics).length === 0 && (
+              <div className="empty-stats">아직 통계 데이터가 없습니다. 파이프라인을 실행해보세요.</div>
+            )}
+            {improvements.length > 0 && (
+              <div className="improvements-section">
+                <h3>💡 개선점 제안</h3>
+                <ul className="improvements-list">
+                  {improvements.map((imp, idx) => (
+                    <li key={idx}>{imp}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         ) : null}
       </main>
 
@@ -484,6 +555,13 @@ function App() {
           {pendingItems.length > 0 && (
             <span className="pending-nav-badge">{pendingItems.length}</span>
           )}
+        </button>
+        <button
+          className={`nav-item ${activeTab === 'stats' ? 'active' : ''}`}
+          onClick={() => setActiveTab('stats')}
+        >
+          <span className="nav-icon">📈</span>
+          <span className="nav-label">Stats</span>
         </button>
       </nav>
 

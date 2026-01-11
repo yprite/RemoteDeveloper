@@ -11,5 +11,6 @@ from .list import (
     TestQaAgent,
     DocAgent,
     ReleaseAgent,
-    MonitoringAgent
+    MonitoringAgent,
+    EvaluationAgent
 )

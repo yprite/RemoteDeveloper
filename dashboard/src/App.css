@@ -406,6 +406,7 @@ h1 {
     width: 430px;
   }
 }
+
 /* === Pending Tab Styles === */
 .pending-tab {
   height: 100%;
@@ -459,11 +460,13 @@ h1 {
 }
 
 .pending-card.clarification {
-  border-left: 4px solid #f59e0b; /* Amber for Questions */
+  border-left: 4px solid #f59e0b;
+  /* Amber for Questions */
 }
 
 .pending-card.approval {
-  border-left: 4px solid #10b981; /* Green for Approvals */
+  border-left: 4px solid #10b981;
+  /* Green for Approvals */
 }
 
 .pending-card-header {
@@ -492,7 +495,7 @@ h1 {
 .original-prompt {
   font-size: 0.8rem;
   color: var(--text-dim);
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   padding: 0.75rem;
   border-radius: 8px;
   margin-bottom: 1rem;
@@ -500,7 +503,7 @@ h1 {
 
 .response-form textarea {
   width: 100%;
-  box-sizing: border-box; 
+  box-sizing: border-box;
   background: #0a0b0d;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -536,7 +539,7 @@ h1 {
 }
 
 .approval-action {
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
   padding: 0.75rem;
   border-radius: 12px;
   margin-top: 0.75rem;
@@ -551,7 +554,8 @@ h1 {
   font-size: 0.85rem;
 }
 
-.approve-btn, .reject-btn {
+.approve-btn,
+.reject-btn {
   padding: 0.4rem 0.8rem;
   border-radius: 8px;
   font-size: 0.75rem;
@@ -607,4 +611,130 @@ h1 {
 
 .approval-image:hover {
   transform: scale(1.05);
+}
+
+/* === Stats Tab Styles === */
+.stats-tab {
+  height: 100%;
+  padding-bottom: 2rem;
+}
+
+.stats-header {
+  margin-bottom: 1.5rem;
+}
+
+.stats-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.stat-icon {
+  font-size: 1.2rem;
+}
+
+.stat-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.stat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+}
+
+.stat-row span {
+  color: var(--text-dim);
+}
+
+.stat-row strong {
+  color: var(--text-main);
+}
+
+.stat-row strong.good {
+  color: #22c55e;
+}
+
+.stat-row strong.bad {
+  color: #ef4444;
+}
+
+.stat-bar {
+  height: 6px;
+  background: #2e3035;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stat-bar-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #22c55e 0%, #3b82f6 100%);
+  transition: width 0.5s ease;
+}
+
+.empty-stats {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 3rem 1rem;
+  font-size: 0.9rem;
+}
+
+.improvements-section {
+  margin-top: 2rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem;
+}
+
+.improvements-section h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.improvements-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.8;
+}
+
+.improvements-list li {
+  margin-bottom: 0.5rem;
 }

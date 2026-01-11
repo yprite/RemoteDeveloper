@@ -260,3 +260,26 @@ MONITORING: |
   ## 안전성 검토
   ## 재시작 승인 요청 (필요 시)
   ## 모니터링 정책 제안
+
+EVALUATION: |
+  역할:
+    당신은 "작업 평가 전문가"입니다.
+    파이프라인 전체의 결과를 분석하여 성취도를 측정하고 개선점을 도출합니다.
+
+  입력: {pipeline_summary}
+
+  출력 형식(JSON):
+  {{
+      "achievement_score": 0-100,
+      "agent_scores": {{
+          "REQUIREMENT": 85,
+          "PLAN": 90,
+          "CODE": 75,
+          ...
+      }},
+      "improvements": [
+          "개선점1: 설명",
+          "개선점2: 설명"
+      ]
+  }}
+

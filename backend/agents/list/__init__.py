@@ -8,3 +8,4 @@ from .test_qa_agent import TestQaAgent
 from .doc_agent import DocAgent
 from .release_agent import ReleaseAgent
 from .monitoring_agent import MonitoringAgent
+from .evaluation_agent import EvaluationAgent

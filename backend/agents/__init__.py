@@ -15,6 +15,7 @@ from .implementations import (
     DocAgent,
     ReleaseAgent,
     MonitoringAgent,
+    EvaluationAgent,
 )
 
 # =============================================================================
@@ -32,11 +33,12 @@ AGENT_REGISTRY: Dict[str, AgentStrategy] = {
     "DOC": DocAgent(),
     "RELEASE": ReleaseAgent(),
     "MONITORING": MonitoringAgent(),
+    "EVALUATION": EvaluationAgent(),
 }
 
 AGENT_ORDER: List[str] = [
     "REQUIREMENT", "PLAN", "UXUI", "ARCHITECT", "CODE",
-    "REFACTORING", "TESTQA", "DOC", "RELEASE", "MONITORING"
+    "REFACTORING", "TESTQA", "DOC", "RELEASE", "MONITORING", "EVALUATION"
 ]
 
 __all__ = [
@@ -53,4 +55,5 @@ __all__ = [
     "DocAgent",
     "ReleaseAgent",
     "MonitoringAgent",
+    "EvaluationAgent",
 ]
