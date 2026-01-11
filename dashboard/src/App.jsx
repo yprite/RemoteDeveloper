@@ -143,6 +143,20 @@ function App() {
     }
   }
 
+  const clearLogs = async (e) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    try {
+      await fetch(`${config.API_BASE_URL}/system/logs`, { method: 'DELETE' })
+      // Refresh logs
+      fetchLogs()
+    } catch (e) {
+      alert('로그 삭제 실패: ' + e.message)
+    }
+  }
+
   const fetchTaskDetail = async (taskId) => {
     try {
       const res = await fetch(`${config.API_BASE_URL}/tasks/${taskId}`)
@@ -450,6 +464,9 @@ function App() {
         ) : activeTab === 'logs' ? (
           <div className="logs-tab">
             <div className="logs-controls">
+              <div className="logs-actions">
+                <button type="button" className="clear-logs-btn" onClick={(e) => clearLogs(e)}>🗑️ 로그 비우기</button>
+              </div>
               <input
                 type="text"
                 placeholder="🔍 검색 (로그 내용, 에이전트...)"

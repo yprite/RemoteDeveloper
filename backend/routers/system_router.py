@@ -94,3 +94,24 @@ def restart_n8n():
     stop_n8n()
     time.sleep(1)
     return start_n8n()
+
+
+@router.delete("/system/logs")
+def clear_logs():
+    """Clear all system log files."""
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+    cleared = []
+    
+    if os.path.exists(log_dir):
+        for filename in os.listdir(log_dir):
+            if filename.endswith(".log"):
+                file_path = os.path.join(log_dir, filename)
+                try:
+                    # Clear file content
+                    open(file_path, 'w').close()
+                    cleared.append(filename)
+                except Exception as e:
+                    logger.error(f"Failed to clear {filename}: {e}")
+    
+    logger.info(f"Logs cleared: {', '.join(cleared)}")
+    return {"status": "cleared", "files": cleared}

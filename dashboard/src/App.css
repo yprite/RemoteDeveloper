@@ -272,6 +272,28 @@ h1 {
   margin-bottom: 1rem;
 }
 
+.logs-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.clear-logs-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-logs-btn:hover {
+  background: var(--card-bg-hover);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .log-search-input {
   background: var(--card-bg);
   border: 1px solid var(--border);

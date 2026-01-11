@@ -1,2 +1,24 @@
-__pycache__
+__pycache__/
 .env
+*.log
+*.db
+.DS_Store
+
+# Virtual Environment
+venv/
+.venv/
+
+# Dependencies
+node_modules/
+
+# Build
+dashboard/dist/
+
+# Backend Data
+backend/data/repos/*
+backend/data/rag/
+backend/data/*.db
+
+# Logs
+backend/logs/*
+!backend/logs/.gitkeep
