@@ -1057,3 +1057,85 @@ h1 {
   color: var(--text-dim);
   margin-top: 0.25rem;
 }
+
+/* ======================================== */
+/* SERVICE CONTROLS */
+/* ======================================== */
+
+.settings-section {
+  margin-top: 2rem;
+}
+
+.settings-section h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+}
+
+.service-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.service-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.service-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.service-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.service-status {
+  font-size: 0.75rem;
+}
+
+.service-status.running {
+  color: var(--success);
+}
+
+.service-status.stopped {
+  color: var(--danger);
+}
+
+.service-status.unknown {
+  color: var(--text-dim);
+}
+
+.service-btns {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.service-btn {
+  background: #2e3035;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.service-btn.start {
+  color: var(--success);
+}
+
+.service-btn.stop {
+  color: var(--danger);
+}
+
+.service-btn.restart {
+  color: var(--primary);
+}

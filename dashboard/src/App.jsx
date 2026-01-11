@@ -38,6 +38,7 @@ function App() {
   // Settings State
   const [llmSettings, setLlmSettings] = useState({})
   const [availableAdapters, setAvailableAdapters] = useState([])
+  const [systemStatus, setSystemStatus] = useState({ backend: 'unknown', n8n: 'unknown' })
 
   // Pending Actions State
   const [pendingItems, setPendingItems] = useState([])
@@ -121,6 +122,8 @@ function App() {
       const adRes = await fetch(`${config.API_BASE_URL}/settings/llm/adapters`)
       const adData = await adRes.json()
       setAvailableAdapters(adData.adapters || [])
+
+      fetchSystemStatus()
     } catch (e) {
       console.error(e)
     }
@@ -141,6 +144,16 @@ function App() {
       const res = await fetch(`${config.API_BASE_URL}/tasks/${taskId}`)
       const data = await res.json()
       setSelectedHistoryTask(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchSystemStatus = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/system/status`)
+      const data = await res.json()
+      setSystemStatus(data)
     } catch (e) {
       console.error(e)
     }
@@ -611,6 +624,48 @@ function App() {
                   </select>
                 </div>
               ))}
+            </div>
+
+            {/* Service Controls Section */}
+            <div className="settings-section">
+              <h3>🖥️ 서비스 제어</h3>
+              <div className="service-controls">
+                <div className="service-card">
+                  <div className="service-info">
+                    <span className="service-name">Backend</span>
+                    <span className={`service-status ${systemStatus.backend}`}>
+                      {systemStatus.backend === 'running' ? '✅ Running' : '⚠️ Unknown'}
+                    </span>
+                  </div>
+                  <button className="service-btn restart" onClick={async () => {
+                    if (confirm('Backend를 재시작하시겠습니까?')) {
+                      await fetch(`${config.API_BASE_URL}/system/restart`, { method: 'POST' })
+                    }
+                  }}>🔄 Restart</button>
+                </div>
+                <div className="service-card">
+                  <div className="service-info">
+                    <span className="service-name">n8n Workflow</span>
+                    <span className={`service-status ${systemStatus.n8n}`}>
+                      {systemStatus.n8n === 'running' ? '✅ Running' : '❌ Stopped'}
+                    </span>
+                  </div>
+                  <div className="service-btns">
+                    <button className="service-btn start" onClick={async () => {
+                      await fetch(`${config.API_BASE_URL}/system/n8n/start`, { method: 'POST' })
+                      setTimeout(() => fetchSystemStatus(), 2000)
+                    }}>▶️</button>
+                    <button className="service-btn stop" onClick={async () => {
+                      await fetch(`${config.API_BASE_URL}/system/n8n/stop`, { method: 'POST' })
+                      setTimeout(() => fetchSystemStatus(), 1000)
+                    }}>⏹️</button>
+                    <button className="service-btn restart" onClick={async () => {
+                      await fetch(`${config.API_BASE_URL}/system/n8n/restart`, { method: 'POST' })
+                      setTimeout(() => fetchSystemStatus(), 2000)
+                    }}>🔄</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : activeTab === 'tasks' ? (
