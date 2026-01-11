@@ -8,12 +8,12 @@ backend/
 │   ├── implementations.py  # Re-exports from list/
 │   └── list/               # Individual Agent Files
 │       ├── requirement_agent.py  # + RAG 컨텍스트 조회
-│       ├── plan_agent.py
+│       ├── plan_agent.py         # + RAG 컨텍스트 조회
 │       ├── uxui_agent.py
 │       ├── architect_agent.py
-│       ├── code_agent.py         # Claude CLI 기본
-│       ├── refactoring_agent.py  # Cursor CLI 기본
-│       ├── test_qa_agent.py
+│       ├── code_agent.py         # Claude CLI 기본 + RAG 컨텍스트 조회
+│       ├── refactoring_agent.py  # Cursor CLI 기본 + RAG + 직접 수정
+│       ├── test_qa_agent.py      # + RAG 컨텍스트 조회
 │       ├── doc_agent.py
 │       ├── release_agent.py
 │       ├── monitoring_agent.py
@@ -62,11 +62,16 @@ backend/
 - **CursorCliAdapter**: Cursor via `cursor` CLI (REFACTORING agent 기본)
 - 에이전트별 설정은 SQLite `llm_settings` 테이블에 저장
 
-### 3. RAG Service (NEW)
+### 3. RAG Service (ENHANCED)
 - **ChromaDB**: 벡터 저장소
 - **OpenAI Embeddings**: text-embedding-3-small
 - **RAG Scheduler**: 10분마다 등록된 repo 자동 인덱싱
-- REQUIREMENT Agent가 관련 코드 컨텍스트 조회
+- **Multi-Agent RAG**: 여러 에이전트가 RAG 쿼리 수행
+  - REQUIREMENT: 전체 구조 파악, target_repo + custom_path 설정
+  - PLAN: 기존 코드 기반 태스크 분해 (처음부터 개발 X)
+  - CODE: 기존 코드 스타일/패턴 참조
+  - REFACTORING: 기존 패턴과 일관성 유지
+  - TESTQA: 기존 테스트 구조 참조
 
 ### 4. Human-in-the-loop (HITL)
 - **Clarification**: `needs_clarification` → 대기 및 텔레그램 알림
@@ -80,10 +85,14 @@ backend/
 
 ## Data Flow
 1. **Ingest**: Task via `/event/ingest` → `queue:REQUIREMENT`
-2. **RAG Query**: REQUIREMENT Agent가 관련 코드 조회
-3. **Processing**: Each agent processes and pushes to next queue
-4. **Approval Gates**: 필요시 대기 (waiting:approval:*)
-5. **Git Ops**: CODE/TESTQA/DOC agents commit files to feature branch
-6. **PR Creation**: DOC agent creates GitHub Pull Request
-7. **Evaluation**: EVALUATION agent scores achievement & records metrics
+2. **RAG Query**: REQUIREMENT Agent가 관련 코드 조회 + `target_repo` & `custom_path` 설정
+3. **Planning**: PLAN Agent가 RAG로 기존 코드 분석 → 수정/확장 기반 태스크 분해
+4. **Processing**: Each agent processes and pushes to next queue
+5. **Approval Gates**: 필요시 대기 (waiting:approval:*)
+6. **Code Ops**: CODE Agent가 RAG로 기존 패턴 참조 → 실제 저장소(custom_path)에 코드 작성
+7. **Refactoring**: REFACTORING Agent가 품질 분석 → 필요시 직접 수정 + Git Commit
+8. **Testing**: TESTQA Agent가 RAG로 기존 테스트 패턴 참조 → 테스트 코드 작성
+9. **Git Ops**: CODE/REFACTORING/TESTQA/DOC agents commit files to feature branch
+10. **PR Creation**: DOC agent creates GitHub Pull Request
+11. **Evaluation**: EVALUATION agent scores achievement & records metrics
 

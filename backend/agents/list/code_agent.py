@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import os
 import json
 import logging
@@ -8,6 +8,29 @@ from core.git_service import GitService
 
 logger = logging.getLogger("agents")
 prompt_manager = PromptManager()
+
+
+def _get_rag_context(query: str, repo_filter: Optional[str] = None, top_k: int = 10) -> str:
+    """Query RAG service for relevant code context with optional repo filter."""
+    try:
+        from core.rag_service import get_rag_service
+        rag = get_rag_service()
+        results = rag.query(query, top_k=top_k, repo_filter=repo_filter)
+        
+        if not results:
+            return ""
+        
+        context_parts = []
+        for r in results:
+            file_path = r.get("metadata", {}).get("file", "unknown")
+            content = r.get("content", "")[:1000]  # Larger chunks for code context
+            context_parts.append(f"### {file_path}\n```\n{content}\n```")
+        
+        return "\n\n".join(context_parts)
+    except Exception as e:
+        logger.warning(f"RAG query failed: {e}")
+        return ""
+
 
 def get_repo_path(event: Dict[str, Any]) -> str:
     """Determine where to perform file operations."""
@@ -41,8 +64,23 @@ class CodeAgent(AgentStrategy):
         event_id = event.get("meta", {}).get("event_id", "unknown")
         arch = event["data"].get("architecture", "")
         plan = event["data"].get("plan", "")
+        original_prompt = event.get("task", {}).get("original_prompt", "")
         
-        formatted_prompt = self.prompt_template.format(architecture=arch, plan=plan)
+        # Get target repo for filtering RAG results
+        target_repo = event.get("task", {}).get("git_context", {}).get("repo_name")
+        
+        # Query RAG for specific code patterns related to the task
+        rag_context = _get_rag_context(original_prompt, repo_filter=target_repo, top_k=10)
+        code_context = ""
+        if rag_context:
+            code_context = f"\n\n## 기존 코드 참조\n다음은 수정/확장해야 할 기존 코드입니다. 이 코드들의 스타일, 패턴, import 구조를 따라서 구현하세요.\n{rag_context}"
+        
+        logger.info(f"[{self.name}] event={event_id} - RAG context: {len(rag_context)} chars, repo_filter={target_repo}")
+        
+        # Enhance architecture with code context
+        enhanced_arch = arch + code_context
+        
+        formatted_prompt = self.prompt_template.format(architecture=enhanced_arch, plan=plan)
         llm = self.get_llm_service()  # Uses configured adapter (Claude CLI by default)
         
         try:

@@ -9,6 +9,32 @@ from core.git_service import GitService
 logger = logging.getLogger("agents")
 prompt_manager = PromptManager()
 
+
+def _get_rag_context(query: str, repo_filter: Optional[str] = None, top_k: int = 6) -> str:
+    """Query RAG service for relevant test patterns and code."""
+    try:
+        from core.rag_service import get_rag_service
+        rag = get_rag_service()
+        
+        # Search for existing test patterns
+        test_query = f"test {query}"
+        results = rag.query(test_query, top_k=top_k, repo_filter=repo_filter)
+        
+        if not results:
+            return ""
+        
+        context_parts = []
+        for r in results:
+            file_path = r.get("metadata", {}).get("file", "unknown")
+            content = r.get("content", "")[:600]
+            context_parts.append(f"### {file_path}\n```\n{content}\n```")
+        
+        return "\n\n".join(context_parts)
+    except Exception as e:
+        logger.warning(f"RAG query failed: {e}")
+        return ""
+
+
 def get_repo_path(event: Dict[str, Any]) -> str:
     """Determine where to perform file operations."""
     task_git_context = event.get("task", {}).get("git_context")
@@ -40,7 +66,21 @@ class TestQaAgent(AgentStrategy):
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
         event_id = event.get("meta", {}).get("event_id", "unknown")
         code_summary = event["data"].get("code", "")
-        formatted_prompt = self.prompt_template.format(code=code_summary)
+        original_prompt = event.get("task", {}).get("original_prompt", "")
+        
+        # Get target repo for filtering RAG results
+        target_repo = event.get("task", {}).get("git_context", {}).get("repo_name")
+        
+        # Query RAG for existing test patterns in the project
+        rag_context = _get_rag_context(original_prompt, repo_filter=target_repo, top_k=6)
+        test_context = ""
+        if rag_context:
+            test_context = f"\n\n## 기존 테스트 패턴 참조\n다음은 프로젝트의 기존 테스트 코드입니다. 이 패턴과 구조를 따라서 테스트를 작성하세요.\n{rag_context}"
+        
+        logger.info(f"[{self.name}] event={event_id} - RAG context: {len(rag_context)} chars")
+        
+        enhanced_code = code_summary + test_context
+        formatted_prompt = self.prompt_template.format(code=enhanced_code)
         
         try:
             llm = self.get_llm_service()

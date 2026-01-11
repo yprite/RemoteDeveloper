@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional, List
+import os
 import json
 import logging
 from agents.base import AgentStrategy
@@ -6,6 +7,9 @@ from core.prompt_manager import PromptManager
 
 logger = logging.getLogger("agents")
 prompt_manager = PromptManager()
+
+# Repository storage path
+REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "repos")
 
 
 def _get_rag_context(query: str, top_k: int = 5) -> str:
@@ -112,7 +116,19 @@ class RequirementAgent(AgentStrategy):
             if result.get("skip_agents"):
                 event["task"]["skip_agents"] = result.get("skip_agents")
             if result.get("target_repo"):
-                event["task"]["git_context"] = {"repo_name": result.get("target_repo")}
+                repo_name = result.get("target_repo")
+                # Find actual local path for the repository
+                local_path = os.path.join(REPOS_DIR, repo_name)
+                if os.path.exists(local_path):
+                    event["task"]["git_context"] = {
+                        "repo_name": repo_name,
+                        "custom_path": local_path  # CODE agent will use this path
+                    }
+                    logger.info(f"[{self.name}] Set git_context: repo={repo_name}, path={local_path}")
+                else:
+                    # Fallback: repo not cloned yet
+                    event["task"]["git_context"] = {"repo_name": repo_name}
+                    logger.warning(f"[{self.name}] Repository path not found: {local_path}")
             
             output = f"[요구사항 정제 완료]\n{result.get('requirement_summary', '')}"
             
