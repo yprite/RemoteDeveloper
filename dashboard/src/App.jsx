@@ -39,6 +39,8 @@ function App() {
   const [llmSettings, setLlmSettings] = useState({})
   const [availableAdapters, setAvailableAdapters] = useState([])
   const [systemStatus, setSystemStatus] = useState({ backend: 'unknown', n8n: 'unknown' })
+  const [repos, setRepos] = useState([])
+  const [newRepoUrl, setNewRepoUrl] = useState('')
 
   // Pending Actions State
   const [pendingItems, setPendingItems] = useState([])
@@ -261,9 +263,48 @@ function App() {
     return waiting.count ?? Object.keys(waiting.items || {}).length ?? 0
   }
 
+  const fetchRepos = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/settings/repos`)
+      const data = await res.json()
+      setRepos(data.repositories || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const addRepo = async () => {
+    if (!newRepoUrl) return
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/settings/repos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: newRepoUrl })
+      })
+      if (res.ok) {
+        setNewRepoUrl('')
+        fetchRepos()
+        alert('저장소가 추가되었습니다. 인덱싱이 시작됩니다.')
+      }
+    } catch (e) {
+      alert('저장소 추가 실패: ' + e.message)
+    }
+  }
+
+  const deleteRepo = async (id) => {
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    try {
+      await fetch(`${config.API_BASE_URL}/settings/repos/${id}`, { method: 'DELETE' })
+      fetchRepos()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   useEffect(() => {
     fetchAgents()
-    fetchSettings()  // Initial settings load
+    fetchSettings()
+    fetchRepos()  // Fetch repos
     const fetchAll = () => {
       fetchLogs()
       fetchQueues()
@@ -661,6 +702,18 @@ function App() {
               </div>
               <span className="chevron">›</span>
             </div>
+
+            {/* Repository Settings Section */}
+            <div
+              className="setting-row expandable"
+              onClick={() => setActiveTab('settings:repos')}
+            >
+              <div className="setting-row-info">
+                <span className="setting-row-icon">📂</span>
+                <span className="setting-row-label">Git 저장소 (RAG)</span>
+              </div>
+              <span className="chevron">›</span>
+            </div>
           </div>
         ) : activeTab === 'settings:llm' ? (
           <div className="settings-tab">
@@ -741,6 +794,45 @@ function App() {
                 </div>
                 <span className="service-note">start_system.py로 관리</span>
               </div>
+            </div>
+          </div>
+        ) : activeTab === 'settings:repos' ? (
+          <div className="settings-tab">
+            <div className="settings-header">
+              <button className="back-btn" onClick={() => setActiveTab('settings')}>← 설정</button>
+            </div>
+            <h3>📂 Git 저장소 관리</h3>
+            <p className="settings-desc">RAG 시스템이 학습할 Git 저장소를 관리합니다.</p>
+
+            <div className="repo-input-group">
+              <input
+                type="text"
+                className="repo-input"
+                placeholder="https://github.com/username/repo"
+                value={newRepoUrl}
+                onChange={(e) => setNewRepoUrl(e.target.value)}
+              />
+              <button className="repo-add-btn" onClick={addRepo}>추가</button>
+            </div>
+
+            <div className="repo-list">
+              {repos.length === 0 ? (
+                <div className="empty-state">등록된 저장소가 없습니다.</div>
+              ) : (
+                repos.map(repo => (
+                  <div key={repo.id} className="repo-card">
+                    <div className="repo-info">
+                      <span className="repo-url">{repo.url}</span>
+                      <span className="repo-status">
+                        {repo.last_indexed_at
+                          ? `Last indexed: ${new Date(repo.last_indexed_at).toLocaleString()}`
+                          : 'Not indexed yet'}
+                      </span>
+                    </div>
+                    <button className="repo-delete-btn" onClick={() => deleteRepo(repo.id)}>삭제</button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         ) : activeTab === 'tasks' ? (

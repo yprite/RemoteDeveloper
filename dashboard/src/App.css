@@ -1314,3 +1314,75 @@ h1 {
   background: var(--danger);
   color: white;
 }
+
+/* ======================================== */
+/* REPOSITORY SETTINGS */
+/* ======================================== */
+
+.repo-input-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.repo-input {
+  flex: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  padding: 0.8rem;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.repo-add-btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 0 1.2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.repo-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.repo-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.repo-url {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.repo-status {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.repo-delete-btn {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
