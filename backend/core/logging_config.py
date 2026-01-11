@@ -114,7 +114,8 @@ def add_log(agent: str, message: str, status: str = "info") -> None:
 
 
 def setup_logging() -> None:
-    """Setup logging with in-memory handler and file handler for errors."""
+    """Setup logging with in-memory handler and file handler for errors.
+    Console output is suppressed to reduce noise."""
     # In-memory handler (all logs for dashboard)
     memory_handler = InMemoryLogHandler()
     memory_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -132,23 +133,29 @@ def setup_logging() -> None:
     file_handler.setFormatter(file_formatter)
     file_handler.addFilter(ErrorOnlyFilter())
     
-    # Add handlers to root logger
+    # Add handlers to root logger (NO StreamHandler = no console output)
     root_logger = logging.getLogger()
+    root_logger.handlers.clear()  # Remove default console handler
     root_logger.addHandler(memory_handler)
     root_logger.addHandler(file_handler)
     root_logger.setLevel(logging.INFO)
     
-    # Add handlers to uvicorn loggers
-    logging.getLogger("uvicorn").addHandler(memory_handler)
-    logging.getLogger("uvicorn").addHandler(file_handler)
-    logging.getLogger("uvicorn.access").addHandler(memory_handler)
-    logging.getLogger("uvicorn.access").addHandler(file_handler)
+    # Suppress uvicorn access logs from console
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_logger.handlers.clear()
+    uvicorn_logger.addHandler(memory_handler)
+    uvicorn_logger.addHandler(file_handler)
     
-    # uvicorn.access 로거에 필터 추가 (폴링 API 로그 제외 - 메모리용)
-    access_filter = AccessLogFilter()
-    logging.getLogger("uvicorn.access").addFilter(access_filter)
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.handlers.clear()
+    uvicorn_access.addHandler(memory_handler)
+    uvicorn_access.addHandler(file_handler)
+    uvicorn_access.addFilter(AccessLogFilter())
     
-    logger.info(f"File logging enabled: {log_file} (errors and non-200 only)")
+    # Suppress other noisy loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
 
 
 def get_logs() -> List[Dict[str, Any]]:
