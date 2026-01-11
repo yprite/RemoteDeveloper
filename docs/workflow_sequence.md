@@ -1,15 +1,16 @@
 # Workflow Sequence Diagram
 
-Uses [Mermaid](https://mermaid.js.org/) syntax for visualization.
+Visualizes the complete task lifecycle from user request to evaluation.
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Telegram
     participant n8n
-    participant Backend as Backend (Ingest)
+    participant Backend
     participant Redis
-    participant Agent as Agent (Loop)
+    participant Agent
+    participant GitHub
     participant Dashboard
     
     %% Ingest Phase
@@ -22,33 +23,44 @@ sequenceDiagram
     n8n-->>Telegram: Reply "Processing Started"
     
     %% Agent Processing Phase
-    loop Worker Loop
-        Agent->>Redis: LPOP queue:{CURRENT_AGENT}
+    loop 11 Agents Pipeline
+        Agent->>Redis: LPOP queue:{CURRENT}
         Redis-->>Agent: Event Data
-        alt Needs Clarification
-            Agent->>Redis: SET waiting:clarification:{id}
-            Agent->>Telegram: Notify "Information Needed"
-            Agent->>Dashboard: Show in Pending Tab
-            User->>Dashboard: Submit Clarification
-            Dashboard->>Backend: POST /pending/{id}/respond
-            Backend->>Redis: RPUSH queue:{CURRENT_AGENT} (Retry)
-        else Normal Processing
-            Agent->>Agent: Process Logic
-            Agent->>Redis: RPUSH queue:{NEXT_AGENT}
+        
+        alt CODE / TESTQA / DOC Agent
+            Agent->>Agent: Generate Code (LLM)
+            Agent->>GitHub: Write Files
+            Agent->>GitHub: Git Commit
         end
+        
+        alt DOC Agent (Final Git Ops)
+            Agent->>GitHub: Git Push
+            Agent->>GitHub: gh pr create
+            GitHub-->>Agent: PR URL
+        end
+        
+        Agent->>Redis: RPUSH queue:{NEXT}
     end
     
-    %% Approval Phase (Orchestrator)
-    Agent->>Backend: Update State to DESIGN
-    Backend->>Telegram: Notify "Approval Needed"
-    Backend->>Dashboard: Show in Pending Tab
+    %% Evaluation Phase
+    Agent->>Agent: EVALUATION Agent
+    Agent->>Redis: Record Metrics
+    Agent->>Dashboard: Update Stats Tab
     
-    User->>Dashboard: Approve (UX & Architect)
-    Dashboard->>Backend: POST /workitem/{id}/approve
-    Backend->>Backend: Check All Approvals
-    
-    alt All Approved
-        Backend->>Redis: RPUSH queue:CODE
-        Backend->>Telegram: Notify "Proceeding to Code"
-    end
+    %% Monitoring & Restart
+    Agent->>Telegram: "재시작 승인 필요"
+    Agent->>Dashboard: Show in Pending Tab
+    User->>Dashboard: Approve Restart
+    Dashboard->>Backend: POST /system/restart
+    Backend->>Backend: os.execl (Self-Restart)
 ```
+
+## Phase Summary
+
+| Phase | Description |
+|-------|-------------|
+| **Ingest** | Telegram → n8n → Backend → Redis Queue |
+| **Processing** | 11 Agents process sequentially via Redis queues |
+| **Git Ops** | CODE/TESTQA/DOC commit files, DOC creates PR |
+| **Evaluation** | EVALUATION agent scores achievement |
+| **Restart** | MONITORING requests approval, Backend self-restarts |
