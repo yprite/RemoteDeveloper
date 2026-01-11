@@ -815,3 +815,245 @@ h1 {
   outline: none;
   min-width: 120px;
 }
+
+/* ======================================== */
+/* TASKS TAB */
+/* ======================================== */
+
+.tasks-tab {
+  padding: 1rem;
+}
+
+.tasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tasks-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.refresh-btn {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.task-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.875rem;
+  cursor: pointer;
+}
+
+.task-card.completed {
+  border-left: 3px solid var(--success);
+}
+
+.task-card.failed {
+  border-left: 3px solid var(--danger);
+}
+
+.task-card.running {
+  border-left: 3px solid var(--primary);
+}
+
+.task-card.pending {
+  border-left: 3px solid var(--text-dim);
+}
+
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.task-card .task-id {
+  font-family: 'SF Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--primary);
+}
+
+.task-card .task-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.task-status.completed {
+  color: var(--success);
+}
+
+.task-status.failed {
+  color: var(--danger);
+}
+
+.task-status.running {
+  color: var(--primary);
+}
+
+.task-prompt {
+  font-size: 0.8rem;
+  color: var(--text-main);
+  margin-bottom: 0.5rem;
+}
+
+.task-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* Task Detail */
+.task-detail {
+  padding: 0.5rem;
+}
+
+.task-detail .back-btn {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.task-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 1rem 0;
+}
+
+.task-detail-header h3 {
+  margin: 0;
+  font-family: 'SF Mono', monospace;
+}
+
+.task-detail-prompt {
+  background: var(--card-bg);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.task-detail-prompt label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.task-detail-prompt p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* Timeline */
+.task-timeline {
+  margin-top: 1rem;
+}
+
+.task-timeline h4 {
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 0.75rem;
+  position: relative;
+  padding-bottom: 1rem;
+}
+
+.timeline-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 14px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.timeline-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.timeline-item.started .timeline-dot {
+  background: var(--primary);
+}
+
+.timeline-item.completed .timeline-dot {
+  background: var(--success);
+}
+
+.timeline-item.failed .timeline-dot,
+.timeline-item.error .timeline-dot {
+  background: var(--danger);
+}
+
+.timeline-content {
+  flex: 1;
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.timeline-agent {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.timeline-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.timeline-status.started {
+  color: var(--primary);
+}
+
+.timeline-status.completed {
+  color: var(--success);
+}
+
+.timeline-status.failed,
+.timeline-status.error {
+  color: var(--danger);
+}
+
+.timeline-message {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}
+
+.timeline-time {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  margin-top: 0.25rem;
+}

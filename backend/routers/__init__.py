@@ -5,6 +5,7 @@ from .file_router import router as file_router
 from .system_router import router as system_router
 from .metrics_router import router as metrics_router
 from .settings_router import router as settings_router
+from .tasks_router import router as tasks_router
 
 __all__ = [
     "agent_router",
@@ -13,4 +14,5 @@ __all__ = [
     "system_router",
     "metrics_router",
     "settings_router",
+    "tasks_router",
 ]

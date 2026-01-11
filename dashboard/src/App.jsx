@@ -25,7 +25,11 @@ function App() {
   const [selectedTask, setSelectedTask] = useState(null)
   const [agentStatus, setAgentStatus] = useState({})
   const [isConnected, setIsConnected] = useState(false)
-  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', 'pending', 'stats', or 'settings'
+  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', 'pending', 'stats', 'tasks', or 'settings'
+
+  // Tasks History State
+  const [tasks, setTasks] = useState([])
+  const [selectedHistoryTask, setSelectedHistoryTask] = useState(null)
 
   // Stats State
   const [agentMetrics, setAgentMetrics] = useState({})
@@ -117,6 +121,26 @@ function App() {
       const adRes = await fetch(`${config.API_BASE_URL}/settings/llm/adapters`)
       const adData = await adRes.json()
       setAvailableAdapters(adData.adapters || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/tasks?limit=50`)
+      const data = await res.json()
+      setTasks(data.tasks || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const fetchTaskDetail = async (taskId) => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/tasks/${taskId}`)
+      const data = await res.json()
+      setSelectedHistoryTask(data)
     } catch (e) {
       console.error(e)
     }
@@ -589,6 +613,71 @@ function App() {
               ))}
             </div>
           </div>
+        ) : activeTab === 'tasks' ? (
+          <div className="tasks-tab">
+            <div className="tasks-header">
+              <h2>📋 Task History</h2>
+              <button className="refresh-btn" onClick={fetchTasks}>🔄</button>
+            </div>
+            {!selectedHistoryTask ? (
+              <div className="tasks-list">
+                {tasks.length === 0 ? (
+                  <div className="empty-state">아직 기록된 작업이 없습니다.</div>
+                ) : (
+                  tasks.map(task => (
+                    <div
+                      key={task.task_id}
+                      className={`task-card ${task.status?.toLowerCase()}`}
+                      onClick={() => fetchTaskDetail(task.task_id)}
+                    >
+                      <div className="task-card-header">
+                        <span className="task-id">#{task.task_id?.slice(-8)}</span>
+                        <span className={`task-status ${task.status?.toLowerCase()}`}>
+                          {task.status === 'COMPLETED' ? '✅' : task.status === 'FAILED' ? '❌' : task.status === 'RUNNING' ? '🔄' : '⏳'}
+                          {task.status || 'PENDING'}
+                        </span>
+                      </div>
+                      <div className="task-prompt">{task.original_prompt?.substring(0, 60)}...</div>
+                      <div className="task-meta">
+                        <span>Stage: {task.current_stage}</span>
+                        <span>{new Date(task.created_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="task-detail">
+                <button className="back-btn" onClick={() => setSelectedHistoryTask(null)}>← 목록으로</button>
+                <div className="task-detail-header">
+                  <h3>#{selectedHistoryTask.task_id?.slice(-8)}</h3>
+                  <span className={`task-status ${selectedHistoryTask.status?.toLowerCase()}`}>
+                    {selectedHistoryTask.status}
+                  </span>
+                </div>
+                <div className="task-detail-prompt">
+                  <label>원본 요청</label>
+                  <p>{selectedHistoryTask.original_prompt}</p>
+                </div>
+                <div className="task-timeline">
+                  <h4>📍 에이전트 시퀀스</h4>
+                  {selectedHistoryTask.events?.map((evt, idx) => (
+                    <div key={idx} className={`timeline-item ${evt.status}`}>
+                      <div className="timeline-dot"></div>
+                      <div className="timeline-content">
+                        <div className="timeline-header">
+                          <span className="timeline-agent">{AGENT_DISPLAY[evt.agent]?.icon} {evt.agent}</span>
+                          <span className={`timeline-status ${evt.status}`}>{evt.status}</span>
+                        </div>
+                        {evt.message && <div className="timeline-message">{evt.message}</div>}
+                        <div className="timeline-time">{new Date(evt.created_at).toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : null}
       </main>
 
@@ -631,6 +720,13 @@ function App() {
         >
           <span className="nav-icon">⚙️</span>
           <span className="nav-label">Settings</span>
+        </button>
+        <button
+          className={`nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('tasks'); fetchTasks(); }}
+        >
+          <span className="nav-icon">📋</span>
+          <span className="nav-label">Tasks</span>
         </button>
       </nav>
 

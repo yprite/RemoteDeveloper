@@ -19,6 +19,7 @@ def process_queues_once():
     from agents import AGENT_REGISTRY, AGENT_ORDER
     from core.redis_client import pop_event, push_event, get_redis
     from core.logging_config import add_log
+    from core.database import create_task, update_task_status, add_task_event
     import json
     from datetime import datetime
     
@@ -44,6 +45,14 @@ def process_queues_once():
             continue
         
         event_id = event.get('meta', {}).get('event_id', 'unknown')
+        original_prompt = event.get('task', {}).get('original_prompt', '')
+        
+        # Create task record if first agent
+        if agent_name == "REQUIREMENT":
+            create_task(event_id, original_prompt)
+        
+        # Log start event
+        add_task_event(event_id, agent_name, "started", f"Processing started")
         add_log(agent_name, f"Processing {event_id}", "running")
         
         try:
@@ -86,6 +95,8 @@ def process_queues_once():
             
             # Check if agent reported an error (stop pipeline)
             if event.get("task", {}).get("has_error"):
+                add_task_event(event_id, agent_name, "failed", event['task'].get('error_message'))
+                update_task_status(event_id, "FAILED", agent_name)
                 add_log(agent_name, f"Pipeline stopped due to error: {event_id}", "failed")
                 
                 # Notify user about the error
@@ -105,6 +116,10 @@ def process_queues_once():
             if not next_agent:
                 event["task"]["status"] = "COMPLETED"
             
+            # Log success event
+            add_task_event(event_id, agent_name, "completed", f"Processed successfully")
+            update_task_status(event_id, "RUNNING" if next_agent else "COMPLETED", next_agent or "DONE")
+            
             # Update history
             event["history"].append({
                 "stage": agent_name,
@@ -121,6 +136,8 @@ def process_queues_once():
                 
         except Exception as e:
             logger.error(f"Worker error processing {event_id}: {e}")
+            add_task_event(event_id, agent_name, "error", str(e)[:200])
+            update_task_status(event_id, "FAILED", agent_name)
             add_log(agent_name, f"Error: {str(e)[:100]}", "failed")
             # Pipeline stops here - event is not pushed to next queue
 

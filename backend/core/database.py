@@ -64,6 +64,31 @@ def init_database():
         )
     """)
     
+    # Task History table (NEW)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS task_history (
+            task_id TEXT PRIMARY KEY,
+            original_prompt TEXT,
+            status TEXT DEFAULT 'PENDING',
+            current_stage TEXT DEFAULT 'REQUIREMENT',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME
+        )
+    """)
+    
+    # Task Events table (NEW)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS task_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            agent TEXT NOT NULL,
+            status TEXT NOT NULL,
+            message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES task_history(task_id)
+        )
+    """)
+    
     conn.commit()
     logger.info(f"Database initialized at {DB_PATH}")
     
@@ -208,3 +233,80 @@ def set_llm_settings_bulk(settings: Dict[str, str]):
             ON CONFLICT(agent) DO UPDATE SET adapter = ?, updated_at = CURRENT_TIMESTAMP
         """, (agent, adapter, adapter))
     conn.commit()
+
+
+# =============================================================================
+# TASK HISTORY CRUD (NEW)
+# =============================================================================
+
+def create_task(task_id: str, original_prompt: str) -> bool:
+    """Create a new task record."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO task_history (task_id, original_prompt) VALUES (?, ?)
+        """, (task_id, original_prompt))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def update_task_status(task_id: str, status: str, current_stage: str = None):
+    """Update task status and optionally current stage."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if current_stage:
+        cursor.execute("""
+            UPDATE task_history SET status = ?, current_stage = ? WHERE task_id = ?
+        """, (status, current_stage, task_id))
+    else:
+        cursor.execute("""
+            UPDATE task_history SET status = ? WHERE task_id = ?
+        """, (status, task_id))
+    if status == "COMPLETED" or status == "FAILED":
+        cursor.execute("""
+            UPDATE task_history SET completed_at = CURRENT_TIMESTAMP WHERE task_id = ?
+        """, (task_id,))
+    conn.commit()
+
+
+def add_task_event(task_id: str, agent: str, status: str, message: str = None):
+    """Add an event to task history."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO task_events (task_id, agent, status, message) VALUES (?, ?, ?, ?)
+    """, (task_id, agent, status, message))
+    conn.commit()
+
+
+def get_tasks(limit: int = 50) -> List[Dict]:
+    """Get recent tasks."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM task_history ORDER BY created_at DESC LIMIT ?
+    """, (limit,))
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def get_task_detail(task_id: str) -> Optional[Dict]:
+    """Get task with all its events."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM task_history WHERE task_id = ?", (task_id,))
+    task = cursor.fetchone()
+    if not task:
+        return None
+    
+    cursor.execute("""
+        SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at ASC
+    """, (task_id,))
+    events = [dict(row) for row in cursor.fetchall()]
+    
+    result = dict(task)
+    result["events"] = events
+    return result
