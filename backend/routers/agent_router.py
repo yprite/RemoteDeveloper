@@ -328,6 +328,27 @@ def get_pending_items():
                 "context": event.get("context", {})
             })
     
+    # 1.6 Get debug mode pending items (NEW)
+    debug_keys = r.keys("waiting:debug:*")
+    for key in debug_keys:
+        event_json = r.get(key)
+        if event_json:
+            event = json.loads(event_json)
+            # key format: waiting:debug:{event_id}:{agent_name}
+            parts = key.split(":")
+            event_id = parts[2] if len(parts) > 2 else "unknown"
+            agent_name = parts[3] if len(parts) > 3 else "UNKNOWN"
+            pending_items.append({
+                "id": f"{event_id}:{agent_name}",
+                "type": "debug",
+                "agent": agent_name,
+                "title": f"[{agent_name}] {event.get('task', {}).get('original_prompt', '')[:40]}...",
+                "current_state": agent_name,
+                "message": f"디버깅 모드: {agent_name} 에이전트 실행 승인 필요",
+                "created_at": event.get("meta", {}).get("timestamp", ""),
+                "context": event.get("context", {})
+            })
+    
     # 2. Get pending approvals from WorkItems in DESIGN state
     # (These are stored by the workflow orchestrator)
     from workflow.orchestrator import Orchestrator

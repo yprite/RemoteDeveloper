@@ -19,13 +19,16 @@ def process_queues_once():
     from agents import AGENT_REGISTRY, AGENT_ORDER
     from core.redis_client import pop_event, push_event, get_redis
     from core.logging_config import add_log
-    from core.database import create_task, update_task_status, add_task_event
+    from core.database import create_task, update_task_status, add_task_event, get_setting
     import json
     from datetime import datetime
     
     r = get_redis()
     if not r:
         return
+    
+    # Check debug mode
+    debug_mode = get_setting("debug_mode", False)
     
     for agent_name in AGENT_ORDER:
         queue_name = f"queue:{agent_name}"
@@ -35,7 +38,22 @@ def process_queues_once():
         if queue_len == 0:
             continue
         
-        # Pop and process
+        # In debug mode, don't auto-consume - instead, peek and wait for approval
+        if debug_mode:
+            # Peek at the item without removing it
+            event_json = r.lindex(queue_name, 0)
+            if event_json:
+                event = json.loads(event_json)
+                event_id = event.get('meta', {}).get('event_id', 'unknown')
+                waiting_key = f"waiting:debug:{event_id}:{agent_name}"
+                
+                # Only add to pending if not already waiting
+                if not r.exists(waiting_key):
+                    r.set(waiting_key, event_json)
+                    add_log(agent_name, f"Debug mode: waiting approval for {event_id}", "pending")
+            continue
+        
+        # Normal mode: Pop and process
         event = pop_event(queue_name)
         if not event:
             continue
