@@ -25,11 +25,15 @@ function App() {
   const [selectedTask, setSelectedTask] = useState(null)
   const [agentStatus, setAgentStatus] = useState({})
   const [isConnected, setIsConnected] = useState(false)
-  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', 'pending', or 'stats'
+  const [activeTab, setActiveTab] = useState('pipeline') // 'pipeline', 'logs', 'pending', 'stats', or 'settings'
 
   // Stats State
   const [agentMetrics, setAgentMetrics] = useState({})
   const [improvements, setImprovements] = useState([])
+
+  // Settings State
+  const [llmSettings, setLlmSettings] = useState({})
+  const [availableAdapters, setAvailableAdapters] = useState([])
 
   // Pending Actions State
   const [pendingItems, setPendingItems] = useState([])
@@ -102,6 +106,36 @@ function App() {
     } catch (e) {
       console.error(e)
     }
+  }
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch(`${config.API_BASE_URL}/settings/llm`)
+      const data = await res.json()
+      setLlmSettings(data.settings || {})
+
+      const adRes = await fetch(`${config.API_BASE_URL}/settings/llm/adapters`)
+      const adData = await adRes.json()
+      setAvailableAdapters(adData.adapters || [])
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const saveLlmSettings = async () => {
+    try {
+      await fetch(`${config.API_BASE_URL}/settings/llm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: llmSettings })
+      })
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleLlmChange = (agent, value) => {
+    setLlmSettings(prev => ({ ...prev, [agent]: value }))
   }
 
   const handleClarificationSubmit = async (itemId) => {
@@ -190,6 +224,7 @@ function App() {
 
   useEffect(() => {
     fetchAgents()
+    fetchSettings()  // Initial settings load
     const fetchAll = () => {
       fetchLogs()
       fetchQueues()
@@ -527,6 +562,33 @@ function App() {
               </div>
             )}
           </div>
+        ) : activeTab === 'settings' ? (
+          <div className="settings-tab">
+            <div className="settings-header">
+              <h2>⚙️ LLM 설정</h2>
+              <button className="save-btn" onClick={saveLlmSettings}>저장</button>
+            </div>
+            <p className="settings-desc">각 에이전트가 사용할 LLM 백엔드를 선택하세요.</p>
+            <div className="settings-grid">
+              {Object.entries(llmSettings).map(([agent, adapter]) => (
+                <div key={agent} className="setting-card">
+                  <div className="setting-card-header">
+                    <span className="setting-icon">{AGENT_DISPLAY[agent]?.icon || '🔧'}</span>
+                    <span className="setting-name">{AGENT_DISPLAY[agent]?.full || agent}</span>
+                  </div>
+                  <select
+                    className="llm-select"
+                    value={adapter}
+                    onChange={(e) => handleLlmChange(agent, e.target.value)}
+                  >
+                    {availableAdapters.map(ad => (
+                      <option key={ad.name} value={ad.name}>{ad.label}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : null}
       </main>
 
@@ -562,6 +624,13 @@ function App() {
         >
           <span className="nav-icon">📈</span>
           <span className="nav-label">Stats</span>
+        </button>
+        <button
+          className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          <span className="nav-icon">⚙️</span>
+          <span className="nav-label">Settings</span>
         </button>
       </nav>
 

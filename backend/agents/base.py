@@ -40,3 +40,8 @@ class AgentStrategy(ABC):
     def get_data_key(self) -> str:
         """Key to store output in event['data']."""
         return self.name.lower()
+    
+    def get_llm_service(self):
+        """Get LLMService configured for this agent's adapter."""
+        from core.llm import LLMService
+        return LLMService(agent_name=self.name)

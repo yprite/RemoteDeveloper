@@ -3,12 +3,10 @@ import os
 import json
 import logging
 from agents.base import AgentStrategy
-from core.llm import LLMService
 from core.prompt_manager import PromptManager
 from core.git_service import GitService
 
 logger = logging.getLogger("agents")
-llm_service = LLMService()
 prompt_manager = PromptManager()
 
 def get_repo_path(event: Dict[str, Any]) -> str:
@@ -44,7 +42,8 @@ class CodeAgent(AgentStrategy):
         plan = event["data"].get("plan", "")
         
         formatted_prompt = self.prompt_template.format(architecture=arch, plan=plan)
-        response = llm_service.chat_completion(formatted_prompt, "코드를 구현해주세요.", json_mode=True)
+        llm = self.get_llm_service()  # Uses configured adapter (Claude CLI by default)
+        response = llm.chat_completion(formatted_prompt, "코드를 구현해주세요.", json_mode=True)
         
         try:
             data = json.loads(response)
