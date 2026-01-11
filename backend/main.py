@@ -2,9 +2,9 @@
 AI Development Team Server - Main Application Entry Point.
 
 This is the central FastAPI application that orchestrates:
-- 10 AI agents for product development workflow
+- 11 AI agents for product development workflow
 - Event-driven queue processing via Redis
-- Workflow/state machine engine
+- Background worker for automatic queue processing
 """
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env
@@ -44,6 +44,10 @@ app.add_middleware(
 
 # Initialize Redis connection
 init_redis()
+
+# Start background worker
+from core.worker import start_worker
+start_worker()
 
 # =============================================================================
 # INCLUDE ROUTERS
