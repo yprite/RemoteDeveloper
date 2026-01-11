@@ -3,6 +3,11 @@
 ## Overview
 This system is an **AI-driven Autonomous Development Platform** designed to automate software creation using a multi-agent architecture. It features self-improvement capabilities where agents can modify their own codebase.
 
+> 📘 **Documentation Resources**
+> - [User Guide](user_guide.md): Dashboard & Feature usage.
+> - [API Reference](api_reference.md): Backend API endpoints.
+
+
 ## High-Level Architecture
 
 ```mermaid
