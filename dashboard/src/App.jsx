@@ -55,7 +55,9 @@ function App() {
   const [isSheetExpanded, setIsSheetExpanded] = useState(false)
   const [dragY, setDragY] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+
   const [sheetTab, setSheetTab] = useState('queue') // 'queue' or 'history'
+  const [logSubTab, setLogSubTab] = useState('system') // 'system' or 'tasks'
   const [agentHistory, setAgentHistory] = useState([])
   const startTouchY = useRef(0)
   const sheetRef = useRef(null)
@@ -143,18 +145,13 @@ function App() {
     }
   }
 
-  const clearLogs = async (e) => {
+  const clearLogs = (e) => {
     if (e && e.stopPropagation) {
       e.stopPropagation()
       e.preventDefault()
     }
-    try {
-      await fetch(`${config.API_BASE_URL}/system/logs`, { method: 'DELETE' })
-      // Refresh logs
-      fetchLogs()
-    } catch (e) {
-      alert('로그 삭제 실패: ' + e.message)
-    }
+    // Clear only the client-side displayed logs
+    setLogs([])
   }
 
   const fetchTaskDetail = async (taskId) => {
@@ -212,13 +209,24 @@ function App() {
     }
   }
 
-  const handleApproval = async (workItemId, approvalType, approved) => {
+  const handleApproval = async (workItemId, approvalType, approved, itemType = 'approval') => {
     try {
-      const res = await fetch(`${config.API_BASE_URL}/workitem/${workItemId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approval_type: approvalType, approved })
-      })
+      let res
+      if (itemType === 'debug') {
+        // Debug mode approval uses different endpoint
+        res = await fetch(`${config.API_BASE_URL}/pending/${workItemId}/debug-approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approved })
+        })
+      } else {
+        // Normal approval
+        res = await fetch(`${config.API_BASE_URL}/workitem/${workItemId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ approval_type: approvalType, approved })
+        })
+      }
       if (res.ok) {
         fetchPending()
       }
@@ -463,62 +471,146 @@ function App() {
           </div>
         ) : activeTab === 'logs' ? (
           <div className="logs-tab">
-            <div className="logs-controls">
-              <div className="logs-actions">
-                <button type="button" className="clear-logs-btn" onClick={(e) => clearLogs(e)}>🗑️ 로그 비우기</button>
-              </div>
-              <input
-                type="text"
-                placeholder="🔍 검색 (로그 내용, 에이전트...)"
-                className="log-search-input"
-                value={logSearch}
-                onChange={(e) => setLogSearch(e.target.value)}
-              />
-              <div className="filter-scroll-row">
-                <button
-                  className={`filter-badge ${logStatusFilter === 'all' ? 'active' : ''}`}
-                  onClick={() => setLogStatusFilter('all')}
-                >전체</button>
-                <button
-                  className={`filter-badge success ${logStatusFilter === 'success' ? 'active' : ''}`}
-                  onClick={() => setLogStatusFilter('success')}
-                >성공</button>
-                <button
-                  className={`filter-badge failed ${logStatusFilter === 'failed' ? 'active' : ''}`}
-                  onClick={() => setLogStatusFilter('failed')}
-                >실패</button>
-                <button
-                  className={`filter-badge running ${logStatusFilter === 'running' ? 'active' : ''}`}
-                  onClick={() => setLogStatusFilter('running')}
-                >진행중</button>
-
-                <div className="filter-divider"></div>
-
-                <select
-                  className="agent-select-filter"
-                  value={logAgentFilter}
-                  onChange={(e) => setLogAgentFilter(e.target.value)}
-                >
-                  <option value="all">모든 에이전트</option>
-                  {agents.map(a => (
-                    <option key={a.name} value={a.name}>{AGENT_DISPLAY[a.name]?.short || a.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="sheet-tabs" style={{ padding: '10px 10px 0' }}>
+              <button
+                className={`sheet-tab ${logSubTab === 'system' ? 'active' : ''}`}
+                onClick={() => setLogSubTab('system')}
+              >📜 시스템 로그</button>
+              <button
+                className={`sheet-tab ${logSubTab === 'tasks' ? 'active' : ''}`}
+                onClick={() => { setLogSubTab('tasks'); fetchTasks(); }}
+              >📋 작업 이력</button>
             </div>
 
-            <div className="logs-window">
-              {filteredLogs.length === 0 && <div className="empty">조건에 맞는 로그가 없습니다.</div>}
-              {filteredLogs.slice().reverse().map((log, i) => (
-                <div key={i} className={`log-row ${log.status}`}>
-                  <div className="meta">
-                    <span className="time">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    <span className="agent">{AGENT_DISPLAY[log.agent]?.short || log.agent}</span>
+            {logSubTab === 'system' ? (
+              <>
+                <div className="logs-controls">
+                  <div className="logs-actions">
+                    <button type="button" className="clear-logs-btn" onClick={(e) => clearLogs(e)}>🗑️ 로그 비우기</button>
                   </div>
-                  <div className="msg">{log.message}</div>
+                  <input
+                    type="text"
+                    placeholder="🔍 검색 (로그 내용, 에이전트...)"
+                    className="log-search-input"
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                  />
+                  <div className="filter-scroll-row">
+                    <button
+                      className={`filter-badge ${logStatusFilter === 'all' ? 'active' : ''}`}
+                      onClick={() => setLogStatusFilter('all')}
+                    >전체</button>
+                    <button
+                      className={`filter-badge success ${logStatusFilter === 'success' ? 'active' : ''}`}
+                      onClick={() => setLogStatusFilter('success')}
+                    >성공</button>
+                    <button
+                      className={`filter-badge failed ${logStatusFilter === 'failed' ? 'active' : ''}`}
+                      onClick={() => setLogStatusFilter('failed')}
+                    >실패</button>
+                    <button
+                      className={`filter-badge running ${logStatusFilter === 'running' ? 'active' : ''}`}
+                      onClick={() => setLogStatusFilter('running')}
+                    >진행중</button>
+                    <button
+                      className={`filter-badge cancelled ${logStatusFilter === 'cancelled' ? 'active' : ''}`}
+                      onClick={() => setLogStatusFilter('cancelled')}
+                    >취소</button>
+
+                    <div className="filter-divider"></div>
+
+                    <select
+                      className="agent-select-filter"
+                      value={logAgentFilter}
+                      onChange={(e) => setLogAgentFilter(e.target.value)}
+                    >
+                      <option value="all">모든 에이전트</option>
+                      {agents.map(a => (
+                        <option key={a.name} value={a.name}>{AGENT_DISPLAY[a.name]?.short || a.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="logs-window">
+                  {filteredLogs.length === 0 && <div className="empty">조건에 맞는 로그가 없습니다.</div>}
+                  {filteredLogs.slice().reverse().map((log, i) => (
+                    <div key={i} className={`log-row ${log.status}`}>
+                      <div className="meta">
+                        <span className="time">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                        <span className="agent">{AGENT_DISPLAY[log.agent]?.short || log.agent}</span>
+                      </div>
+                      <div className="msg">{log.message}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="tasks-tab">
+                {!selectedHistoryTask ? (
+                  <>
+                    <div className="tasks-header">
+                      <h2>작업 이력 ({tasks.length})</h2>
+                      <button className="refresh-btn" onClick={fetchTasks}>🔄</button>
+                    </div>
+                    <div className="tasks-list">
+                      {tasks.map(task => (
+                        <div
+                          key={task.id || task.task_id}
+                          className={`task-card ${task.status === 'COMPLETED' ? 'completed' : task.status === 'FAILED' ? 'failed' : 'pending'}`}
+                          onClick={() => fetchTaskDetail(task.id || task.task_id)}
+                        >
+                          <div className="task-card-header">
+                            <span className="task-id">#{(task.id || task.task_id)?.slice(0, 8)}</span>
+                            <span className={`task-status-badge ${task.status}`}>{task.status}</span>
+                          </div>
+                          <div className="task-card-prompt">
+                            {task.original_prompt}
+                          </div>
+                          <div className="task-card-meta">
+                            Created: {new Date(task.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                      {tasks.length === 0 && <div className="empty-state">기록된 작업이 없습니다.</div>}
+                    </div>
+                  </>
+                ) : (
+                  <div className="task-detail">
+                    <button className="back-btn" onClick={() => setSelectedHistoryTask(null)}>← 목록으로</button>
+                    <div className="task-detail-header">
+                      <h3>#{(selectedHistoryTask.task_id || selectedHistoryTask.id)?.slice(-8)}</h3>
+                      <span className={`task-status ${selectedHistoryTask.status?.toLowerCase()}`}>
+                        {selectedHistoryTask.status}
+                      </span>
+                    </div>
+                    <div className="task-detail-prompt">
+                      <label>원본 요청</label>
+                      <p>{selectedHistoryTask.original_prompt}</p>
+                    </div>
+                    <div className="task-timeline">
+                      <h4>📍 에이전트 시퀀스</h4>
+                      {selectedHistoryTask.events?.map((evt, idx) => (
+                        <div key={idx} className={`timeline-item ${evt.status}`}>
+                          <div className="timeline-dot"></div>
+                          <div className="timeline-content">
+                            <div className="timeline-header">
+                              <span className="timeline-agent">{AGENT_DISPLAY[evt.agent]?.icon} {evt.agent}</span>
+                              <span className={`timeline-status ${evt.status}`}>{evt.status}</span>
+                            </div>
+                            {evt.message && <div className="timeline-message">{evt.message}</div>}
+                            <div className="timeline-time">{new Date(evt.created_at).toLocaleTimeString()}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {(!selectedHistoryTask.events || selectedHistoryTask.events.length === 0) && (
+                        <div className="empty-state">에이전트 이벤트가 없습니다.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : activeTab === 'pending' ? (
           <div className="pending-tab">
@@ -537,8 +629,9 @@ function App() {
                 {pendingItems.map(item => (
                   <div key={item.id} className={`pending-card ${item.type}`}>
                     <div className="pending-card-header">
-                      <span className="pending-type-badge">
-                        {item.type === 'clarification' ? '💬 정보 요청' : '✅ 승인 필요'}
+                      <span className={`pending-type-badge ${item.type}`}>
+                        {item.type === 'clarification' ? '💬 정보 요청' : 
+                         item.type === 'debug' ? '🐛 디버그 승인' : '✅ 승인 필요'}
                       </span>
                       <span className="pending-time">
                         {new Date(item.created_at).toLocaleString()}
@@ -572,6 +665,28 @@ function App() {
                           </button>
                         </div>
                       </div>
+                    ) : item.type === 'debug' ? (
+                      <div className="approval-content debug-content">
+                        <div className="approval-title">{item.title}</div>
+                        <div className="debug-message">{item.message}</div>
+                        <div className="approval-buttons">
+                          <div className="approval-action">
+                            <span className="approval-label">🐛 {item.agent} 에이전트:</span>
+                            <button
+                              className="approve-btn"
+                              onClick={() => handleApproval(item.id, item.agent, true, 'debug')}
+                            >
+                              ▶️ 실행
+                            </button>
+                            <button
+                              className="reject-btn"
+                              onClick={() => handleApproval(item.id, item.agent, false, 'debug')}
+                            >
+                              ❌ 취소
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     ) : (
                       <div className="approval-content">
                         <div className="approval-title">{item.title}</div>
@@ -593,7 +708,7 @@ function App() {
                         )}
 
                         <div className="approval-buttons">
-                          {item.pending_approvals.map(approvalType => (
+                          {(item.pending_approvals || []).map(approvalType => (
                             <div key={approvalType} className="approval-action">
                               <span className="approval-label">{approvalType} 승인:</span>
                               <button
@@ -852,71 +967,6 @@ function App() {
               )}
             </div>
           </div>
-        ) : activeTab === 'tasks' ? (
-          <div className="tasks-tab">
-            <div className="tasks-header">
-              <h2>📋 Task History</h2>
-              <button className="refresh-btn" onClick={fetchTasks}>🔄</button>
-            </div>
-            {!selectedHistoryTask ? (
-              <div className="tasks-list">
-                {tasks.length === 0 ? (
-                  <div className="empty-state">아직 기록된 작업이 없습니다.</div>
-                ) : (
-                  tasks.map(task => (
-                    <div
-                      key={task.task_id}
-                      className={`task-card ${task.status?.toLowerCase()}`}
-                      onClick={() => fetchTaskDetail(task.task_id)}
-                    >
-                      <div className="task-card-header">
-                        <span className="task-id">#{task.task_id?.slice(-8)}</span>
-                        <span className={`task-status ${task.status?.toLowerCase()}`}>
-                          {task.status === 'COMPLETED' ? '✅' : task.status === 'FAILED' ? '❌' : task.status === 'RUNNING' ? '🔄' : '⏳'}
-                          {task.status || 'PENDING'}
-                        </span>
-                      </div>
-                      <div className="task-prompt">{task.original_prompt?.substring(0, 60)}...</div>
-                      <div className="task-meta">
-                        <span>Stage: {task.current_stage}</span>
-                        <span>{new Date(task.created_at).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : (
-              <div className="task-detail">
-                <button className="back-btn" onClick={() => setSelectedHistoryTask(null)}>← 목록으로</button>
-                <div className="task-detail-header">
-                  <h3>#{selectedHistoryTask.task_id?.slice(-8)}</h3>
-                  <span className={`task-status ${selectedHistoryTask.status?.toLowerCase()}`}>
-                    {selectedHistoryTask.status}
-                  </span>
-                </div>
-                <div className="task-detail-prompt">
-                  <label>원본 요청</label>
-                  <p>{selectedHistoryTask.original_prompt}</p>
-                </div>
-                <div className="task-timeline">
-                  <h4>📍 에이전트 시퀀스</h4>
-                  {selectedHistoryTask.events?.map((evt, idx) => (
-                    <div key={idx} className={`timeline-item ${evt.status}`}>
-                      <div className="timeline-dot"></div>
-                      <div className="timeline-content">
-                        <div className="timeline-header">
-                          <span className="timeline-agent">{AGENT_DISPLAY[evt.agent]?.icon} {evt.agent}</span>
-                          <span className={`timeline-status ${evt.status}`}>{evt.status}</span>
-                        </div>
-                        {evt.message && <div className="timeline-message">{evt.message}</div>}
-                        <div className="timeline-time">{new Date(evt.created_at).toLocaleTimeString()}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         ) : null}
       </main>
 
@@ -929,13 +979,7 @@ function App() {
           <span className="nav-icon">📊</span>
           <span className="nav-label">Pipeline</span>
         </button>
-        <button
-          className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('logs')}
-        >
-          <span className="nav-icon">📜</span>
-          <span className="nav-label">Logs</span>
-        </button>
+
         <button
           className={`nav-item ${activeTab === 'pending' ? 'active' : ''}`}
           onClick={() => setActiveTab('pending')}
@@ -945,6 +989,13 @@ function App() {
           {pendingItems.length > 0 && (
             <span className="pending-nav-badge">{pendingItems.length}</span>
           )}
+        </button>
+        <button
+          className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          <span className="nav-icon">📜</span>
+          <span className="nav-label">Logs</span>
         </button>
         <button
           className={`nav-item ${activeTab === 'stats' ? 'active' : ''}`}
@@ -959,13 +1010,6 @@ function App() {
         >
           <span className="nav-icon">⚙️</span>
           <span className="nav-label">Settings</span>
-        </button>
-        <button
-          className={`nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('tasks'); fetchTasks(); }}
-        >
-          <span className="nav-icon">📋</span>
-          <span className="nav-label">Tasks</span>
         </button>
       </nav>
 

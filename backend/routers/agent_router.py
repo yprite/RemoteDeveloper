@@ -455,3 +455,61 @@ def respond_to_pending(item_id: str, request: PendingResponseRequest):
         "message": "Response submitted. Item moved back to processing queue."
     }
 
+
+class DebugApprovalRequest(BaseModel):
+    approved: bool
+
+
+@router.post("/pending/{item_id}/debug-approve")
+def approve_debug_pending(item_id: str, request: DebugApprovalRequest):
+    """
+    Approve or cancel a debug mode pending agent execution.
+    
+    item_id format: {event_id}:{agent_name}
+    """
+    r = get_redis()
+    if not r:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    
+    # Parse item_id to get event_id and agent_name
+    parts = item_id.split(":")
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid item_id format. Expected: event_id:agent_name")
+    
+    event_id = parts[0]
+    agent_name = parts[1]
+    
+    waiting_key = f"waiting:debug:{event_id}:{agent_name}"
+    event_json = r.get(waiting_key)
+    
+    if not event_json:
+        raise HTTPException(status_code=404, detail=f"Debug pending item not found: {item_id}")
+    
+    event = json.loads(event_json)
+    
+    # Remove from waiting
+    r.delete(waiting_key)
+    
+    if request.approved:
+        # Push back to agent queue for processing
+        queue_name = f"queue:{agent_name}"
+        push_event(queue_name, event)
+        add_log(agent_name, f"Debug approval received, resuming execution for {event_id}", "success")
+        return {
+            "status": "approved",
+            "item_id": item_id,
+            "message": f"Agent {agent_name} execution approved. Moved to processing queue."
+        }
+    else:
+        # Cancel this task - remove from queue and log as cancelled
+        original_prompt = event.get("task", {}).get("original_prompt", "")[:50]
+        
+        # Log the cancellation with 'cancelled' status
+        add_log(agent_name, f"작업 취소됨: {original_prompt}... (event: {event_id})", "cancelled")
+        
+        return {
+            "status": "cancelled",
+            "item_id": item_id,
+            "message": f"Task cancelled at {agent_name} stage. Removed from queue."
+        }
+
