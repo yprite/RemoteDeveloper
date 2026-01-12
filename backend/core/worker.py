@@ -38,25 +38,39 @@ def process_queues_once():
         if queue_len == 0:
             continue
         
-        # In debug mode, don't auto-consume - instead, peek and wait for approval
+        # In debug mode, check for approval before processing
         if debug_mode:
-            # Peek at the item without removing it
+            # Peek at the item first
             event_json = r.lindex(queue_name, 0)
             if event_json:
-                event = json.loads(event_json)
-                event_id = event.get('meta', {}).get('event_id', 'unknown')
+                peeked_event = json.loads(event_json)
+                event_id = peeked_event.get('meta', {}).get('event_id', 'unknown')
                 waiting_key = f"waiting:debug:{event_id}:{agent_name}"
                 
-                # Only add to pending if not already waiting
-                if not r.exists(waiting_key):
-                    r.set(waiting_key, event_json)
-                    add_log(agent_name, f"Debug mode: waiting approval for {event_id}", "pending")
-            continue
+                # Check if this event was already debug-approved
+                if peeked_event.get('meta', {}).get('debug_approved'):
+                    # Approved - continue to normal processing (will pop below)
+                    pass
+                elif r.exists(waiting_key):
+                    # Already waiting for approval - skip this agent
+                    continue
+                else:
+                    # New item - move to waiting and skip
+                    # Pop from queue and store in waiting
+                    popped_json = r.lpop(queue_name)
+                    if popped_json:
+                        r.set(waiting_key, popped_json)
+                        add_log(agent_name, f"Debug mode: waiting approval for {event_id}", "pending")
+                    continue
         
-        # Normal mode: Pop and process
+        # Normal mode (or debug-approved): Pop and process
         event = pop_event(queue_name)
         if not event:
             continue
+        
+        # Clear debug_approved flag if it was set
+        if event.get('meta', {}).get('debug_approved'):
+            event['meta']['debug_approved'] = False
         
         agent = AGENT_REGISTRY.get(agent_name)
         if not agent:

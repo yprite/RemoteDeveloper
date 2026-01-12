@@ -3,7 +3,7 @@ Agent Router - Endpoints for agent processing and event ingestion.
 """
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException
 
@@ -36,6 +36,27 @@ def list_agents():
         ],
         "order": AGENT_ORDER
     }
+
+
+@router.get("/agents/status")
+def get_agent_statuses():
+    """Get persistent agent statuses from Redis."""
+    r = get_redis()
+    if not r:
+        return {"statuses": {}}
+    
+    statuses = {}
+    for agent_name in AGENT_ORDER:
+        status_json = r.get(f"agent_status:{agent_name}")
+        if status_json:
+            try:
+                statuses[agent_name] = json.loads(status_json)
+            except:
+                statuses[agent_name] = {"status": "idle", "message": "", "timestamp": ""}
+        else:
+            statuses[agent_name] = {"status": "idle", "message": "", "timestamp": ""}
+    
+    return {"statuses": statuses}
 
 
 @router.get("/agent/{agent_name}/history")
@@ -291,6 +312,7 @@ from pydantic import BaseModel
 class PendingResponseRequest(BaseModel):
     """Request model for pending item response."""
     response: str
+    images: Optional[List[str]] = None  # List of image URLs
 
 
 @router.get("/pending")
@@ -318,8 +340,11 @@ def get_pending_items():
             pending_items.append({
                 "id": event_id,
                 "type": "clarification",
+                "agent": "REQUIREMENT",  # Clarifications come from REQUIREMENT agent
+                "current_state": "REQUIREMENT",  # For filtering by agent
                 "question": event.get("task", {}).get("clarification_question", "추가 정보가 필요합니다"),
                 "original_prompt": event.get("task", {}).get("original_prompt", ""),
+                "title": event.get("task", {}).get("original_prompt", "")[:50],
                 "created_at": event.get("meta", {}).get("timestamp", ""),
                 "context": event.get("context", {})
             })
@@ -331,12 +356,23 @@ def get_pending_items():
         if event_json:
             event = json.loads(event_json)
             event_id = key.replace("waiting:approval:", "")
+            current_stage = event.get("task", {}).get("current_stage", "")
+            
+            # Map agent stage to approval types
+            stage_approval_map = {
+                "UXUI": ["UX"],
+                "ARCHITECT": ["ARCH"],
+                "RELEASE": ["RELEASE"],
+            }
+            pending_approvals = stage_approval_map.get(current_stage, [current_stage])
+            
             pending_items.append({
                 "id": event_id,
                 "type": "approval",
+                "source": "event",  # Mark as event-based for frontend
                 "title": event.get("task", {}).get("original_prompt", "")[:50],
-                "current_state": event.get("task", {}).get("current_stage", ""),
-                "pending_approvals": [event.get("task", {}).get("current_stage", "UNKNOWN")],
+                "current_state": current_stage,
+                "pending_approvals": pending_approvals,
                 "message": event.get("task", {}).get("approval_message", "승인이 필요합니다"),
                 "created_at": event.get("meta", {}).get("timestamp", ""),
                 "context": event.get("context", {})
@@ -352,15 +388,30 @@ def get_pending_items():
             parts = key.split(":")
             event_id = parts[2] if len(parts) > 2 else "unknown"
             agent_name = parts[3] if len(parts) > 3 else "UNKNOWN"
+            
+            task_data = event.get("task", {})
+            history = event.get("history", [])
+            
+            # Get previous agent results
+            previous_results = {}
+            for h in history:
+                if h.get("stage") and h.get("message"):
+                    previous_results[h["stage"]] = h["message"]
+            
             pending_items.append({
                 "id": f"{event_id}:{agent_name}",
                 "type": "debug",
                 "agent": agent_name,
-                "title": f"[{agent_name}] {event.get('task', {}).get('original_prompt', '')[:40]}...",
+                "event_id": event_id,
+                "title": f"[{agent_name}] {task_data.get('original_prompt', '')[:40]}...",
+                "original_prompt": task_data.get("original_prompt", ""),
                 "current_state": agent_name,
                 "message": f"디버깅 모드: {agent_name} 에이전트 실행 승인 필요",
                 "created_at": event.get("meta", {}).get("timestamp", ""),
-                "context": event.get("context", {})
+                "context": event.get("context", {}),
+                "data": event.get("data", {}),  # Previous agent outputs
+                "history": history,
+                "previous_results": previous_results
             })
     
     # 2. Get pending approvals from WorkItems in DESIGN state
@@ -382,6 +433,7 @@ def get_pending_items():
                 pending_items.append({
                     "id": wi.id,
                     "type": "approval",
+                    "source": "workitem",  # Mark as workitem-based
                     "title": wi.title,
                     "current_state": wi.current_state,
                     "pending_approvals": pending_approvals,
@@ -395,6 +447,7 @@ def get_pending_items():
             pending_items.append({
                 "id": wi.id,
                 "type": "approval",
+                "source": "workitem",  # Mark as workitem-based
                 "title": wi.title,
                 "current_state": wi.current_state,
                 "pending_approvals": ["RELEASE"],
@@ -417,6 +470,7 @@ def respond_to_pending(item_id: str, request: PendingResponseRequest):
     Submit a response to a pending clarification request.
     
     This is equivalent to /event/clarify but with a simpler interface.
+    Supports both text and image responses.
     """
     r = get_redis()
     if not r:
@@ -430,17 +484,38 @@ def respond_to_pending(item_id: str, request: PendingResponseRequest):
     
     event = json.loads(event_json)
     
+    # Build response content
+    response_parts = []
+    if request.response:
+        response_parts.append(request.response)
+    
+    # Add image references if provided
+    if request.images:
+        image_refs = "\n".join([f"[첨부 이미지: {url}]" for url in request.images])
+        response_parts.append(f"\n\n[첨부된 이미지들]:\n{image_refs}")
+        
+        # Store image URLs in task for later access
+        if "clarification_images" not in event["task"]:
+            event["task"]["clarification_images"] = []
+        event["task"]["clarification_images"].extend(request.images)
+    
+    full_response = "\n".join(response_parts)
+    
     # Append response to original prompt
     original = event["task"].get("original_prompt", "")
-    event["task"]["original_prompt"] = f"{original}\n\n[사용자 추가 정보]: {request.response}"
+    event["task"]["original_prompt"] = f"{original}\n\n[사용자 추가 정보]: {full_response}"
     event["task"]["needs_clarification"] = False
     event["task"]["clarification_question"] = None
     
     # Add to history
+    history_msg = f"User responded: {request.response[:100] if request.response else '(이미지 첨부)'}..."
+    if request.images:
+        history_msg += f" (+{len(request.images)} images)"
+    
     event["history"].append({
         "stage": "CLARIFICATION_RESPONSE",
         "timestamp": datetime.now().isoformat(),
-        "message": f"User responded: {request.response[:100]}..."
+        "message": history_msg
     })
     
     # Remove from waiting and push back to requirement queue
@@ -452,8 +527,91 @@ def respond_to_pending(item_id: str, request: PendingResponseRequest):
     return {
         "status": "responded",
         "item_id": item_id,
-        "message": "Response submitted. Item moved back to processing queue."
+        "message": "Response submitted. Item moved back to processing queue.",
+        "images_attached": len(request.images) if request.images else 0
     }
+
+
+class ApprovalRequest(BaseModel):
+    approved: bool
+    approval_type: Optional[str] = None
+
+
+@router.post("/pending/{item_id}/approve")
+def approve_event_pending(item_id: str, request: ApprovalRequest):
+    """
+    Approve or reject an event-based pending item.
+    
+    This endpoint handles 'waiting:approval:*' items from the agent pipeline.
+    For WorkItem-based approvals, use /workitem/{id}/approve instead.
+    """
+    r = get_redis()
+    if not r:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    
+    waiting_key = f"waiting:approval:{item_id}"
+    event_json = r.get(waiting_key)
+    
+    if not event_json:
+        raise HTTPException(status_code=404, detail=f"Pending approval item not found: {item_id}")
+    
+    event = json.loads(event_json)
+    
+    # Remove from waiting
+    r.delete(waiting_key)
+    
+    if request.approved:
+        # Clear approval flag and push to next queue
+        event["task"]["needs_approval"] = False
+        event["task"]["approval_message"] = None
+        
+        # Add to history
+        event["history"].append({
+            "stage": "APPROVAL_GRANTED",
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Approved by user: {request.approval_type or 'general'}"
+        })
+        
+        # Determine next agent based on current stage
+        current_stage = event.get("task", {}).get("current_stage", "")
+        
+        # Map stages to their next agents
+        from agents import AGENT_ORDER
+        try:
+            current_idx = AGENT_ORDER.index(current_stage)
+            if current_idx < len(AGENT_ORDER) - 1:
+                next_agent = AGENT_ORDER[current_idx + 1]
+                event["task"]["current_stage"] = next_agent
+                push_event(f"queue:{next_agent}", event)
+                add_log("PENDING", f"Approval granted, moving to {next_agent}: {item_id}", "success")
+            else:
+                event["task"]["status"] = "COMPLETED"
+                add_log("PENDING", f"Approval granted, pipeline completed: {item_id}", "success")
+        except (ValueError, IndexError):
+            # If current stage not in order, just mark as completed
+            event["task"]["status"] = "COMPLETED"
+            add_log("PENDING", f"Approval granted: {item_id}", "success")
+        
+        return {
+            "status": "approved",
+            "item_id": item_id,
+            "message": "Approval granted. Item moved to next stage."
+        }
+    else:
+        # Mark as rejected
+        event_id = event.get("meta", {}).get("event_id", item_id)
+        
+        from core.database import update_task_status, add_task_event
+        add_task_event(event_id, "APPROVAL", "rejected", "Rejected by user")
+        update_task_status(event_id, "REJECTED", "APPROVAL")
+        
+        add_log("PENDING", f"Approval rejected: {item_id}", "cancelled")
+        
+        return {
+            "status": "rejected",
+            "item_id": item_id,
+            "message": "Request rejected."
+        }
 
 
 class DebugApprovalRequest(BaseModel):
@@ -466,6 +624,10 @@ def approve_debug_pending(item_id: str, request: DebugApprovalRequest):
     Approve or cancel a debug mode pending agent execution.
     
     item_id format: {event_id}:{agent_name}
+    
+    Note: In debug mode, worker pops items from queue and stores them in waiting:debug.
+    This endpoint retrieves from waiting:debug and either pushes back to queue (approved)
+    or discards (cancelled).
     """
     r = get_redis()
     if not r:
@@ -487,13 +649,17 @@ def approve_debug_pending(item_id: str, request: DebugApprovalRequest):
     
     event = json.loads(event_json)
     
-    # Remove from waiting
+    # Remove from waiting list (the item is already out of the queue)
     r.delete(waiting_key)
     
+    queue_name = f"queue:{agent_name}"
+    
     if request.approved:
-        # Push back to agent queue for processing
-        queue_name = f"queue:{agent_name}"
-        push_event(queue_name, event)
+        # Mark event as debug-approved so worker processes it immediately
+        event["meta"]["debug_approved"] = True
+        
+        # Push to FRONT of queue so it processes immediately (lpush, not rpush)
+        r.lpush(queue_name, json.dumps(event))
         add_log(agent_name, f"Debug approval received, resuming execution for {event_id}", "success")
         return {
             "status": "approved",
@@ -501,15 +667,23 @@ def approve_debug_pending(item_id: str, request: DebugApprovalRequest):
             "message": f"Agent {agent_name} execution approved. Moved to processing queue."
         }
     else:
-        # Cancel this task - remove from queue and log as cancelled
+        # Cancel this task - item is already removed from queue (was in waiting)
         original_prompt = event.get("task", {}).get("original_prompt", "")[:50]
         
-        # Log the cancellation with 'cancelled' status
+        # Update task status in database
+        try:
+            from core.database import update_task_status, add_task_event
+            add_task_event(event_id, agent_name, "cancelled", "Cancelled by user in debug mode")
+            update_task_status(event_id, "CANCELLED", agent_name)
+        except Exception as e:
+            add_log("DEBUG", f"Failed to update task status: {e}", "warning")
+        
+        # Log the cancellation
         add_log(agent_name, f"작업 취소됨: {original_prompt}... (event: {event_id})", "cancelled")
         
         return {
             "status": "cancelled",
             "item_id": item_id,
-            "message": f"Task cancelled at {agent_name} stage. Removed from queue."
+            "message": f"Task cancelled at {agent_name} stage."
         }
 

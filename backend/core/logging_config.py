@@ -96,10 +96,11 @@ def add_log(agent: str, message: str, status: str = "info") -> None:
     Args:
         agent: Agent name (e.g., "SYSTEM", "REQUIREMENT", etc.)
         message: Log message
-        status: Status indicator ("info", "success", "pending", "failed")
+        status: Status indicator ("info", "success", "pending", "failed", "running")
     """
+    timestamp = datetime.now().isoformat()
     entry = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": timestamp,
         "agent": agent,
         "message": message,
         "status": status
@@ -107,6 +108,22 @@ def add_log(agent: str, message: str, status: str = "info") -> None:
     logs.append(entry)
     if len(logs) > MAX_LOGS:
         logs.pop(0)
+    
+    # Persist agent status to Redis (for non-SYSTEM agents)
+    if agent not in ["SYSTEM", "INGRESS", "PENDING", "CLARIFICATION", "DEBUG"]:
+        try:
+            from core.redis_client import get_redis
+            import json
+            r = get_redis()
+            if r:
+                status_data = json.dumps({
+                    "status": status,
+                    "message": message,
+                    "timestamp": timestamp
+                })
+                r.set(f"agent_status:{agent}", status_data)
+        except Exception:
+            pass  # Silently fail if Redis not available
     
     # Also log errors to file via standard logging
     if status == "failed":

@@ -1,34 +1,36 @@
 from typing import Dict, Any, Optional
 import logging
 from agents.base import AgentStrategy
-from core.llm import LLMService
-from core.prompt_manager import PromptManager
 
 logger = logging.getLogger("agents")
-llm_service = LLMService()
-prompt_manager = PromptManager()
+
 
 class ReleaseAgent(AgentStrategy):
+    """
+    Release Agent - Currently SKIPPED.
+    
+    TODO: Implement release automation (CI/CD triggers, version bumps, etc.)
+    """
+    
     @property
     def name(self) -> str:
         return "RELEASE"
     
     @property
     def display_name(self) -> str:
-        return "Release 에이전트"
+        return "Release 에이전트 (Skipped)"
     
     @property
     def prompt_template(self) -> str:
-        return prompt_manager.get_prompt(self.name)
+        return ""  # Not used
     
     @property
     def next_agent(self) -> Optional[str]:
         return "MONITORING"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        doc = event["data"].get("documentation", "")
-        formatted_prompt = self.prompt_template.format(documentation=doc)
-        
-        output = llm_service.chat_completion(formatted_prompt, "배포 체크리스트 확인.")
-        event["data"]["release"] = output
+        event_id = event.get("meta", {}).get("event_id", "unknown")
+        logger.info(f"[{self.name}] event={event_id} - Skipped (not implemented)")
+        event["data"]["release"] = "[Skipped] Release Agent is currently disabled."
         return event
+

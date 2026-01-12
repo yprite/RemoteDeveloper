@@ -26,14 +26,27 @@ def _clone_or_pull_repo(url: str, local_path: str) -> bool:
     
     try:
         if os.path.exists(os.path.join(local_path, ".git")):
-            # Pull latest
+            # Always checkout main branch first (agents may create feature branches)
+            checkout_result = subprocess.run(
+                ["git", "checkout", "main"],
+                cwd=local_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if checkout_result.returncode != 0:
+                logger.warning(f"Failed to checkout main for {local_path}: {checkout_result.stderr}")
+            
+            # Pull from origin/main explicitly (avoids upstream tracking issues)
             result = subprocess.run(
-                ["git", "pull", "--quiet"],
+                ["git", "pull", "origin", "main", "--quiet"],
                 cwd=local_path,
                 capture_output=True,
                 text=True,
                 timeout=120
             )
+            if result.returncode != 0:
+                logger.error(f"Git pull failed: {result.stderr}")
             return result.returncode == 0
         else:
             # Clone
@@ -44,6 +57,8 @@ def _clone_or_pull_repo(url: str, local_path: str) -> bool:
                 text=True,
                 timeout=300
             )
+            if result.returncode != 0:
+                logger.error(f"Git clone failed: {result.stderr}")
             return result.returncode == 0
     except Exception as e:
         logger.error(f"Git operation failed for {url}: {e}")

@@ -6,10 +6,12 @@ from agents.base import AgentStrategy
 from core.llm import LLMService
 from core.prompt_manager import PromptManager
 from core.git_service import GitService
+from core.github_service import get_github_service
 
 logger = logging.getLogger("agents")
 llm_service = LLMService()
 prompt_manager = PromptManager()
+
 
 def get_repo_path(event: Dict[str, Any]) -> str:
     """Determine where to perform file operations."""
@@ -22,14 +24,25 @@ def get_repo_path(event: Dict[str, Any]) -> str:
     repo_path = os.path.join(workspace_dir, task_id)
     return repo_path
 
+
 class DocAgent(AgentStrategy):
+    """
+    Documentation Agent - Updates docs/ folder and creates PR.
+    
+    Focuses on:
+    - README updates
+    - API documentation
+    - Architecture docs
+    - User guides
+    """
+    
     @property
     def name(self) -> str:
         return "DOC"
     
     @property
     def display_name(self) -> str:
-        return "DOC 에이전트"
+        return "DOC 에이전트 (문서화 + PR)"
     
     @property
     def prompt_template(self) -> str:
@@ -40,64 +53,95 @@ class DocAgent(AgentStrategy):
         return "RELEASE"
     
     def process(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        event_id = event.get("meta", {}).get("event_id", "unknown")
         code = event["data"].get("code", "")
         test = event["data"].get("test_results", "")
+        original_prompt = event.get("task", {}).get("original_prompt", "")
         
         formatted_prompt = self.prompt_template.format(code=code, test_results=test)
         
-        response = llm_service.chat_completion(formatted_prompt, "문서를 작성해주세요.", json_mode=True)
-        
         try:
+            response = llm_service.chat_completion(formatted_prompt, "docs/ 폴더 내 문서를 업데이트해주세요.", json_mode=True)
             data = json.loads(response)
             files = data.get("files", [])
+            
+            # Ensure files go to docs/ folder
+            doc_files = []
+            for file in files:
+                path = file.get("path", "")
+                # Ensure docs/ prefix
+                if not path.startswith("docs/"):
+                    path = f"docs/{path}"
+                doc_files.append({"path": path, "content": file.get("content", "")})
             
             # Git Operations
             repo_path = get_repo_path(event)
             git = GitService(repo_path)
+            repo_url = event.get("task", {}).get("git_context", {}).get("repo_url")
             
+            # Branch naming: feature/evt_***@docs
             task_id = event.get("meta", {}).get("event_id", "task")
             if task_id.startswith("evt_"):
-                 branch_name = f"feature/{task_id}"
+                branch_name = f"feature/{task_id}@docs"
             else:
-                 branch_name = f"feature/task_{task_id}"
+                branch_name = f"feature/task_{task_id}@docs"
 
             try:
-                git.checkout(branch_name)
-            except:
-                logger.warning(f"Could not check out {branch_name}, staying on current branch")
+                git.checkout("main")
+                git.checkout(branch_name, create_if_missing=True)
+            except Exception as e:
+                logger.warning(f"[{self.name}] event={event_id} - Branch checkout issue: {e}")
 
             # Write doc files
-            for file in files:
+            for file in doc_files:
                 git.write_file_content(file["path"], file["content"])
             
             # Commit docs
-            if len(files) > 0:
-                git.commit(f"docs: Add {len(files)} documentation files")
+            commit_msg = f"docs: Update {len(doc_files)} documentation files"
+            if len(doc_files) > 0:
+                git.commit(commit_msg)
             
-            # --- NEW: Push & PR ---
-            try:
-                # 1. Push Feature Branch
-                git.push(branch_name)
-                
-                # 2. Create PR
-                pr_title = f"Feat: {event.get('task', {}).get('title', 'Autonomous Update')}"
-                pr_body = (
-                    f"## Description\nAutonomous update by AI Agent.\n\n"
-                    f"### Task\n{event.get('task', {}).get('original_prompt')}\n\n"
-                    f"### Agents Involved\n- Code\n- TestQA\n- Doc"
-                )
-                pr_url = git.create_pr(title=pr_title, body=pr_body, base_branch="main")
-                
-                output = f"[문서화 및 PR 완료]\n- Files: {len(files)}\n- Branch: {branch_name}\n- Pushed: Yes\n- PR: {pr_url}"
-            except Exception as e:
-                output = f"[문서화 완료 (PR 실패)]\n- Files: {len(files)}\n- Error: {str(e)}"
-                logger.error(f"Push/PR failed: {e}")
+            # Push and create PR
+            pr_info = ""
+            github = get_github_service()
+            
+            if repo_url:
+                parts = repo_url.rstrip(".git").split("/")
+                if len(parts) >= 2:
+                    github.set_repo(parts[-2], parts[-1])
+                    
+                    if github.push_branch(repo_path, branch_name):
+                        pr_title = f"[DOC] {commit_msg}"
+                        pr_body = f"""## 문서화 내용
+- 문서 파일: {len(doc_files)}개
+
+## 변경 파일
+{chr(10).join([f"- {f['path']}" for f in doc_files])}
+
+## 관련 작업
+{original_prompt[:300]}
+
+---
+*Generated by DOC Agent (event: {event_id})*
+"""
+                        pr = github.create_pull_request(
+                            title=pr_title,
+                            body=pr_body,
+                            head=branch_name,
+                            base="main"
+                        )
+                        if pr:
+                            pr_info = f"\n- PR: #{pr['number']} ({pr['html_url']})"
+                            event["data"]["doc_pr_number"] = pr["number"]
+            
+            output = f"[문서화 완료]\n- Files: {len(doc_files)}\n- Branch: {branch_name}{pr_info}"
 
         except json.JSONDecodeError:
-             output = f"[문서 초안]\n{response[:500]}..."
+            output = f"[문서 초안]\n{response[:500]}..."
         except Exception as e:
-             output = f"[Error] Doc generation failed: {str(e)}"
-             logger.error(f"Doc Agent failed: {e}")
+            output = f"[Error] Doc generation failed: {str(e)}"
+            logger.error(f"[{self.name}] event={event_id} - Doc Agent failed: {e}")
 
         event["data"]["documentation"] = output
         return event
+

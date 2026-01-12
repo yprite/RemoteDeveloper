@@ -57,6 +57,55 @@ start_worker()
 from core.rag_scheduler import start_rag_scheduler
 start_rag_scheduler()
 
+# Start PR wait service (polling for merge + review handling)
+from core.pr_wait_service import get_pr_wait_service, PendingPR
+from core.pr_review_service import get_pr_review_service, ReviewFeedback
+import logging
+
+_pr_logger = logging.getLogger("pr_feedback")
+
+
+def _handle_pr_merged(pending: PendingPR):
+    """Handle PR merge - trigger next agent."""
+    from core.redis_client import get_redis
+    import json
+    redis = get_redis()
+    if redis and pending.next_agent:
+        queue_name = f"queue:{pending.next_agent}"
+        event_data = pending.event_data
+        event_data["status"] = "PR_MERGED"
+        redis.rpush(queue_name, json.dumps(event_data))
+        _pr_logger.info(f"PR merged - queued event to {pending.next_agent}")
+
+
+def _handle_changes_requested(pending: PendingPR, feedback: ReviewFeedback):
+    """Handle changes requested - trigger rework."""
+    from core.redis_client import get_redis
+    from core.pr_review_service import get_pr_review_service
+    import json
+    
+    redis = get_redis()
+    if redis:
+        # Create rework event
+        review_service = get_pr_review_service()
+        rework_event = review_service.create_rework_event(
+            original_event=pending.event_data,
+            feedback=feedback,
+            agent_name=pending.agent_name
+        )
+        
+        # Queue to same agent for rework
+        queue_name = f"queue:{pending.agent_name}"
+        redis.rpush(queue_name, json.dumps(rework_event))
+        _pr_logger.info(f"Changes requested - queued rework to {pending.agent_name}")
+
+
+# Initialize and start PR wait service
+_pr_wait = get_pr_wait_service()
+_pr_wait.set_merged_callback(_handle_pr_merged)
+_pr_wait.set_changes_requested_callback(_handle_changes_requested)
+_pr_wait.start_polling()
+
 # =============================================================================
 # INCLUDE ROUTERS
 # =============================================================================

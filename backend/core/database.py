@@ -105,7 +105,7 @@ def _insert_default_llm_settings(cursor):
         "UXUI": "openai",
         "ARCHITECT": "openai",
         "CODE": "claude_cli",
-        "REFACTORING": "cursor_cli",
+        "REFACTORING": "codex_cli",  # Changed from cursor_cli (deprecated)
         "TESTQA": "openai",
         "DOC": "openai",
         "RELEASE": "openai",

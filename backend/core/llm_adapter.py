@@ -146,11 +146,36 @@ class ClaudeCliAdapter(LLMAdapter):
 
 
 class CursorCliAdapter(LLMAdapter):
-    """Cursor CLI adapter using the `cursor` command."""
+    """
+    Cursor CLI adapter - DEPRECATED.
+    
+    The Cursor CLI (`cursor` command) is a file editor launcher and does NOT 
+    support LLM API calls. This adapter now falls back to Codex CLI.
+    """
     
     @property
     def name(self) -> str:
         return "cursor_cli"
+    
+    def generate(self, 
+                 system_prompt: str, 
+                 user_prompt: str, 
+                 json_mode: bool = False) -> str:
+        # Cursor CLI doesn't support LLM calls - fall back to Codex CLI
+        logger.warning("CursorCliAdapter is deprecated. Using Codex CLI fallback.")
+        return CodexCliAdapter().generate(system_prompt, user_prompt, json_mode)
+
+
+class CodexCliAdapter(LLMAdapter):
+    """
+    OpenAI Codex CLI adapter using `codex exec --full-auto`.
+    
+    Runs in non-interactive mode with automatic approvals in sandbox.
+    """
+    
+    @property
+    def name(self) -> str:
+        return "codex_cli"
     
     def generate(self, 
                  system_prompt: str, 
@@ -162,19 +187,39 @@ class CursorCliAdapter(LLMAdapter):
             full_prompt += "\n\nRespond with valid JSON only."
         
         try:
-            # Cursor CLI with message flag
+            # Use codex exec with --full-auto for non-interactive execution
+            # --full-auto: auto-approve in sandbox mode
+            # -o: write last message to file for easy parsing
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                output_file = f.name
+            
             result = subprocess.run(
-                ["cursor", "--message", full_prompt],
+                [
+                    "codex", "exec", 
+                    "--full-auto",
+                    "-o", output_file,
+                    full_prompt
+                ],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=300,  # 5 minutes timeout for complex tasks
+                cwd=os.getcwd()
             )
             
-            if result.returncode != 0:
-                logger.error(f"Cursor CLI error: {result.stderr}")
-                return f"Error: {result.stderr}"
+            # Read output from file
+            content = ""
+            try:
+                with open(output_file, 'r') as f:
+                    content = f.read().strip()
+                os.unlink(output_file)
+            except:
+                # Fallback to stdout if file read fails
+                content = result.stdout.strip()
             
-            content = result.stdout.strip()
+            if result.returncode != 0 and not content:
+                logger.error(f"Codex CLI error: {result.stderr}")
+                return f"Error: {result.stderr}"
             
             if json_mode:
                 content = self.extract_json(content)
@@ -182,13 +227,13 @@ class CursorCliAdapter(LLMAdapter):
             return content
             
         except FileNotFoundError:
-            logger.error("Cursor CLI not found. Enable via Cursor app: Command Palette > 'Install cursor command'")
-            return '{"error": "Cursor CLI not installed"}'
+            logger.error("Codex CLI not found. Install with: npm install -g @openai/codex")
+            return '{"error": "Codex CLI not installed"}'
         except subprocess.TimeoutExpired:
-            logger.error("Cursor CLI timeout")
-            return '{"error": "Cursor CLI timeout"}'
+            logger.error("Codex CLI timeout (5 min)")
+            return '{"error": "Codex CLI timeout"}'
         except Exception as e:
-            logger.error(f"Cursor CLI failed: {e}")
+            logger.error(f"Codex CLI failed: {e}")
             return f"Error: {str(e)}"
 
 
@@ -197,6 +242,7 @@ ADAPTER_REGISTRY: Dict[str, type] = {
     "openai": OpenAIAdapter,
     "claude_cli": ClaudeCliAdapter,
     "cursor_cli": CursorCliAdapter,
+    "codex_cli": CodexCliAdapter,
 }
 
 def get_adapter(adapter_name: str) -> LLMAdapter:
