@@ -22,3 +22,4 @@ backend/data/*.db
 # Logs
 backend/logs/*
 !backend/logs/.gitkeep
+projects/*

@@ -25,11 +25,12 @@ def start_webtmux():
     """Start webtmux server."""
     print("🚀 Starting webtmux...")
     webtmux_path = os.path.expanduser("~/.local/bin/webtmux")
+    claude_path = os.path.expanduser("~/.local/bin/claude")
     cmd = [
         webtmux_path,
         "-c", "admin:admin123",  # Basic Auth
         "-w",                    # Write permission
-        "tmux", "new-session", "-A", "-s", "dev"
+        "tmux", "new-session", "-A", "-s", "dev", claude_path
     ]
     
     # Run in background
@@ -49,7 +50,8 @@ def start_webtmux():
 def start_bridge():
     """Start Telegram bridge."""
     print("🤖 Starting Telegram bridge...")
-    cmd = ["uv", "run", "python", "telegram_bridge.py"]
+    uv_path = os.path.expanduser("~/.local/bin/uv")
+    cmd = [uv_path, "run", "python", "telegram_bridge.py"]
     
     process = subprocess.Popen(
         cmd,
