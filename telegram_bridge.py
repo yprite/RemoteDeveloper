@@ -4,12 +4,14 @@ Telegram → Claude CLI Bridge
 Smart bridge that:
 1. Forwards Telegram messages to Claude CLI
 2. Monitors Claude output and alerts only when decision needed
+3. Provides webtmux URL via Cloudflare tunnel
 """
 import os
 import subprocess
 import asyncio
 import logging
 import re
+import signal
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -20,149 +22,148 @@ logger = logging.getLogger(__name__)
 TMUX_PANE = "%0"
 POLL_INTERVAL = 3  # seconds
 last_output_hash = ""
-user_chat_id = None  # Store user's chat ID for proactive alerts
+user_chat_id = None
+tunnel_process = None
+tunnel_url = None
 
-
-# Detection patterns for when user input is needed
+# Detection patterns
 DECISION_PATTERNS = [
-    r"Enter to select",          # Choice menu
-    r"\[y/N\]",                   # Yes/No prompt
-    r"\[Y/n\]",                   # Yes/No prompt
-    r"yes/no",                    # Confirmation
-    r"Press .* to continue",     # Wait for key
-    r"❯.*\n.*\n.*\n.*1\.",       # Numbered choices
-    r"Do you want to",           # Question
-    r"Would you like to",        # Question
-    r"승인|거부|선택",             # Korean approval
+    r"Enter to select", r"\[y/N\]", r"\[Y/n\]", r"yes/no",
+    r"Press .* to continue", r"❯.*\n.*\n.*\n.*1\.",
+    r"Do you want to", r"Would you like to", r"승인|거부|선택",
 ]
+COMPLETION_PATTERNS = [r"✓.*완료", r"Successfully", r"Done!", r"Created.*file", r"PR.*created"]
+ERROR_PATTERNS = [r"Error:", r"Failed:", r"❌", r"에러", r"실패"]
 
-COMPLETION_PATTERNS = [
-    r"✓.*완료",
-    r"Successfully",
-    r"Done!",
-    r"Created.*file",
-    r"PR.*created",
-]
 
-ERROR_PATTERNS = [
-    r"Error:",
-    r"Failed:",
-    r"❌",
-    r"에러",
-    r"실패",
-]
+def start_tunnel():
+    """Start Cloudflare tunnel for webtmux."""
+    global tunnel_process, tunnel_url
+    try:
+        # Kill existing tunnel
+        if tunnel_process:
+            tunnel_process.terminate()
+        
+        # Start new tunnel
+        tunnel_process = subprocess.Popen(
+            [os.path.expanduser("~/.local/bin/cloudflared"), "tunnel", "--url", "http://localhost:8080"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        
+        # Wait for URL
+        for _ in range(30):  # 30 second timeout
+            line = tunnel_process.stdout.readline()
+            if "trycloudflare.com" in line:
+                # Extract URL
+                match = re.search(r'https://[a-z0-9-]+\.trycloudflare\.com', line)
+                if match:
+                    tunnel_url = match.group(0)
+                    return tunnel_url
+        return None
+    except Exception as e:
+        logger.error(f"Tunnel error: {e}")
+        return None
+
+
+def stop_tunnel():
+    """Stop Cloudflare tunnel."""
+    global tunnel_process, tunnel_url
+    if tunnel_process:
+        tunnel_process.terminate()
+        tunnel_process = None
+    tunnel_url = None
 
 
 def send_to_tmux(text: str) -> str:
-    """Send text to Claude CLI in tmux."""
     try:
         subprocess.run(["tmux", "send-keys", "-t", TMUX_PANE, "-l", text], check=True)
         subprocess.run(["tmux", "send-keys", "-t", TMUX_PANE, "C-m"], check=True)
-        return "✅ Sent to Claude"
+        return "✅ Sent"
     except Exception as e:
         return f"❌ Error: {e}"
 
 
 def read_tmux_output(lines: int = 50) -> str:
-    """Read recent output from tmux pane."""
     try:
         result = subprocess.run(
             ["tmux", "capture-pane", "-t", TMUX_PANE, "-p", "-S", f"-{lines}"],
             capture_output=True, text=True
         )
         return result.stdout.strip()
-    except Exception as e:
-        return f"Error reading: {e}"
+    except:
+        return ""
 
 
 def detect_needs_attention(output: str) -> tuple[bool, str, str]:
-    """Check if output needs user attention. Returns (needs_attention, type, message)."""
-    # Check for decision needed
     for pattern in DECISION_PATTERNS:
         if re.search(pattern, output, re.IGNORECASE | re.MULTILINE):
-            # Extract relevant part (last 30 lines)
             lines = output.split('\n')[-30:]
             return True, "decision", '\n'.join(lines)
-    
-    # Check for completion
     for pattern in COMPLETION_PATTERNS:
         if re.search(pattern, output, re.IGNORECASE):
-            lines = output.split('\n')[-10:]
-            return True, "complete", '\n'.join(lines)
-    
-    # Check for errors
+            return True, "complete", '\n'.join(output.split('\n')[-10:])
     for pattern in ERROR_PATTERNS:
         if re.search(pattern, output):
-            lines = output.split('\n')[-15:]
-            return True, "error", '\n'.join(lines)
-    
+            return True, "error", '\n'.join(output.split('\n')[-15:])
     return False, "", ""
 
 
 async def poll_claude(app):
-    """Periodically check Claude output for attention-needed events."""
     global last_output_hash, user_chat_id
-    
     while True:
         await asyncio.sleep(POLL_INTERVAL)
-        
         if not user_chat_id:
             continue
         
         output = read_tmux_output(60)
         output_hash = hash(output[-500:] if len(output) > 500 else output)
-        
-        # Skip if output hasn't changed
         if output_hash == last_output_hash:
             continue
         last_output_hash = output_hash
         
-        # Check if attention needed
         needs_attention, alert_type, message = detect_needs_attention(output)
-        
         if needs_attention:
-            # Format message based on type
-            if alert_type == "decision":
-                header = "🔔 *선택이 필요합니다*"
-            elif alert_type == "complete":
-                header = "✅ *작업 완료*"
-            elif alert_type == "error":
-                header = "❌ *에러 발생*"
-            else:
-                header = "📢 *알림*"
-            
-            # Truncate if too long
+            headers = {"decision": "🔔 *선택 필요*", "complete": "✅ *완료*", "error": "❌ *에러*"}
+            header = headers.get(alert_type, "📢 *알림*")
             if len(message) > 3000:
                 message = message[-3000:]
-            
             try:
-                await app.bot.send_message(
-                    chat_id=user_chat_id,
-                    text=f"{header}\n\n```\n{message}\n```",
-                    parse_mode="Markdown"
-                )
+                await app.bot.send_message(chat_id=user_chat_id, text=f"{header}\n\n```\n{message}\n```", parse_mode="Markdown")
             except Exception as e:
-                logger.error(f"Failed to send alert: {e}")
+                logger.error(f"Alert error: {e}")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command."""
-    global user_chat_id
+    global user_chat_id, tunnel_url
     user_chat_id = update.effective_chat.id
-    await update.message.reply_text(
-        "🤖 *Claude CLI Bridge*\n\n"
-        "*Commands:*\n"
-        "/status - Claude 화면 보기\n"
-        "/clear - 새 대화\n\n"
-        "메시지 → Claude 전달\n"
-        "숫자 (1,2,3) → 선택지 선택\n\n"
-        "✨ *스마트 알림:* 선택/에러/완료 시 자동 알림",
-        parse_mode="Markdown"
-    )
+    
+    await update.message.reply_text("🚀 Starting Cloudflare tunnel...")
+    
+    # Start tunnel in background
+    loop = asyncio.get_event_loop()
+    url = await loop.run_in_executor(None, start_tunnel)
+    
+    if url:
+        await update.message.reply_text(
+            f"🤖 *Claude CLI Bridge*\n\n"
+            f"🌐 *webtmux*: {url}\n"
+            f"🔑 ID: `admin` / PW: `admin123`\n\n"
+            f"*Commands:*\n"
+            f"/status - Claude 화면\n"
+            f"/stop - 종료\n\n"
+            f"메시지 → Claude 전달\n"
+            f"숫자 (1,2,3) → 선택",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            "🤖 *Claude CLI Bridge* (tunnel failed)\n\n"
+            "/status - Claude 화면\n/stop - 종료",
+            parse_mode="Markdown"
+        )
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show recent Claude output."""
     output = read_tmux_output(60)
     if len(output) > 4000:
         output = output[-4000:]
@@ -170,28 +171,29 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send /clear to start new conversation."""
     result = send_to_tmux("/clear")
     await update.message.reply_text(result)
 
 
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Stop all services."""
+    stop_tunnel()
+    await update.message.reply_text("🛑 Tunnel stopped.\n\nTo fully exit, Ctrl+C the bot process.")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Forward message to Claude CLI."""
     global user_chat_id
     user_chat_id = update.effective_chat.id
-    
     text = update.message.text
     result = send_to_tmux(text)
     await update.message.reply_text(result)
 
 
 async def post_init(app):
-    """Start polling after bot initialization."""
     asyncio.create_task(poll_claude(app))
 
 
 def main():
-    """Start the bot."""
     from dotenv import load_dotenv
     load_dotenv()
     
@@ -201,13 +203,13 @@ def main():
         return
     
     app = Application.builder().token(token).post_init(post_init).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("clear", clear))
+    app.add_handler(CommandHandler("stop", stop))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    logger.info("Starting Telegram bot with smart polling...")
+    logger.info("Starting Telegram bot...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
